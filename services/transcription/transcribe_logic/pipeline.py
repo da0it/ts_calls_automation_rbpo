@@ -5,10 +5,11 @@ import tempfile
 from typing import Any, Dict, List, Optional
 
 from transcribe_logic.audio_utils import to_wav_16k_mono_preprocessed
-from transcribe_logic.whisperx_ext import whisperx_diarize_via_cli
-from transcribe_logic.whisperx_runtime import whisperx_diarize_inprocess
+from transcribe_logic.whisperx_ext import whisperx_transcribe_via_cli
+from transcribe_logic.whisperx_runtime import whisperx_transcribe_inprocess
 
 ROLE_UNKNOWN = "не определено"
+DEFAULT_SPEAKER = "UNKNOWN"
 
 
 def _default_whisperx_venv_python() -> str:
@@ -33,83 +34,12 @@ def _round_segments(segments: List[Dict[str, Any]], ndigits: int = 2) -> List[Di
     return out
 
 
-def _merge_adjacent_same_speaker(
-    segments: List[Dict[str, Any]],
-    max_gap: float = 0.7,
-) -> List[Dict[str, Any]]:
-    if not segments:
-        return []
-
-    segs = sorted(segments, key=lambda x: (x.get("start", 0.0), x.get("end", 0.0)))
-    out = [segs[0].copy()]
-
-    for s in segs[1:]:
-        prev = out[-1]
-        same_spk = s.get("speaker") == prev.get("speaker") and s.get("speaker") is not None
-        gap = float(s.get("start", 0.0)) - float(prev.get("end", 0.0))
-
-        if same_spk and 0 <= gap <= max_gap:
-            prev["end"] = max(float(prev.get("end", 0.0)), float(s.get("end", 0.0)))
-            prev_text = str(prev.get("text", "") or "").rstrip()
-            cur_text = str(s.get("text", "") or "").lstrip()
-            prev["text"] = (prev_text + " " + cur_text).strip()
-        else:
-            out.append(s.copy())
-
-    return out
-
-
-def _smooth_short_speaker_flips(
-    segments: List[Dict[str, Any]],
-    *,
-    max_flip_sec: float = 0.9,
-    max_flip_words: int = 3,
-) -> List[Dict[str, Any]]:
-    if len(segments) < 3:
-        return segments
-
-    segs = [s.copy() for s in sorted(segments, key=lambda x: (x.get("start", 0.0), x.get("end", 0.0)))]
-    changed = False
-
-    for i in range(1, len(segs) - 1):
-        prev = segs[i - 1]
-        cur = segs[i]
-        nxt = segs[i + 1]
-
-        prev_spk = prev.get("speaker")
-        cur_spk = cur.get("speaker")
-        next_spk = nxt.get("speaker")
-        if not prev_spk or not cur_spk or not next_spk:
-            continue
-        if prev_spk != next_spk or cur_spk == prev_spk:
-            continue
-
-        s = float(cur.get("start", 0.0))
-        e = float(cur.get("end", s))
-        dur = max(0.0, e - s)
-        words = len(str(cur.get("text", "") or "").split())
-        if dur <= max_flip_sec or words <= max_flip_words:
-            cur["speaker"] = prev_spk
-            changed = True
-
-    return _merge_adjacent_same_speaker(segs, max_gap=0.35) if changed else segs
-
-
-def _ensure_speakers_exist(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _attach_default_labels(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for s in segments:
         if not s.get("speaker"):
-            s["speaker"] = "SPEAKER_00"
+            s["speaker"] = DEFAULT_SPEAKER
+        s["role"] = ROLE_UNKNOWN
     return segments
-
-
-def _unknown_role_map(segments: List[Dict[str, Any]]) -> Dict[str, str]:
-    speakers = sorted({str(s.get("speaker")) for s in segments if s.get("speaker")})
-    return {spk: ROLE_UNKNOWN for spk in speakers}
-
-
-def _mark_segments_unknown_role(segments: List[Dict[str, Any]]) -> None:
-    for seg in segments:
-        seg["role"] = ROLE_UNKNOWN
 
 
 def transcribe_with_roles(
@@ -117,10 +47,11 @@ def transcribe_with_roles(
     *,
     hf_token: Optional[str] = None,
     no_stem: bool = False,  # kept for backward compatibility; currently unused.
-    whisper_repo_dir: str = os.getenv("WHISPER_REPO_DIR", os.path.expanduser("~/whisper-diarization")),
+    whisper_repo_dir: str = "",
     whisper_venv_python: str = "",
 ) -> Dict[str, Any]:
     del no_stem
+    del whisper_repo_dir
 
     if hf_token:
         os.environ["HF_TOKEN"] = hf_token
@@ -129,7 +60,6 @@ def transcribe_with_roles(
         wav = os.path.join(td, "audio_mono.wav")
         to_wav_16k_mono_preprocessed(audio_path, wav)
 
-        diarization_backend = os.getenv("WHISPERX_DIARIZATION_BACKEND", "pyannote").strip().lower()
         common_kwargs = dict(
             model=os.getenv("WHISPERX_MODEL", "large-v3"),
             language=os.getenv("WHISPERX_LANGUAGE", "ru"),
@@ -137,27 +67,22 @@ def transcribe_with_roles(
             compute_type=os.getenv("WHISPERX_COMPUTE_TYPE", "int8"),
             batch_size=int(os.getenv("WHISPERX_BATCH_SIZE", "4")),
             vad_method=os.getenv("WHISPERX_VAD_METHOD", "silero").strip().lower(),
-            diarize=os.getenv("WHISPERX_DIARIZE", "1").strip().lower() in {"1", "true", "yes", "on"},
-            diarize_model=os.getenv("WHISPERX_DIARIZE_MODEL", "pyannote/speaker-diarization-3.1"),
-            diarization_backend=diarization_backend,
-            nemo_repo_dir=os.getenv("WHISPER_REPO_DIR", whisper_repo_dir),
-            hf_token=os.getenv("HF_TOKEN"),
         )
 
         persistent = os.getenv("WHISPERX_PERSISTENT", "1").strip().lower() in {"1", "true", "yes", "on"}
         if persistent:
-            segments = whisperx_diarize_inprocess(wav, **common_kwargs)
+            segments = whisperx_transcribe_inprocess(wav, **common_kwargs)
             mode = "whisperx_persistent"
         else:
             venv_python = whisper_venv_python or _default_whisperx_venv_python()
-            segments = whisperx_diarize_via_cli(
+            segments = whisperx_transcribe_via_cli(
                 wav,
                 venv_python=venv_python,
                 **common_kwargs,
             )
             mode = "whisperx_cli"
 
-        note = f"ASR backend whisperx ({mode}): mono 16k -> whisperx transcribe+align+{diarization_backend} diarization."
+        note = f"ASR backend whisperx ({mode}): mono 16k -> whisperx transcribe+align. Diarization disabled."
 
         if not segments:
             return {
@@ -168,30 +93,14 @@ def transcribe_with_roles(
                 "note": "Backend returned no segments.",
             }
 
-        segments = _ensure_speakers_exist(segments)
+        segments = _attach_default_labels(segments)
         segments = _round_segments(segments, ndigits=2)
-
-        smooth_segments = os.getenv("WHISPERX_SMOOTH_SEGMENTS", "0").strip().lower() in {"1", "true", "yes", "on"}
-        if smooth_segments:
-            segments = _smooth_short_speaker_flips(
-                segments,
-                max_flip_sec=float(os.getenv("WHISPERX_FLIP_MAX_SEC", "0.9")),
-                max_flip_words=int(os.getenv("WHISPERX_FLIP_MAX_WORDS", "3")),
-            )
-            segments = _merge_adjacent_same_speaker(
-                segments,
-                max_gap=float(os.getenv("WHISPERX_MERGE_GAP_SEC", "0.35")),
-            )
-
-        _mark_segments_unknown_role(segments)
-        role_map = _unknown_role_map(segments)
-        note += " Role inference: disabled (all roles = unknown)."
+        note += " Role inference: disabled (all segments use default labels)."
 
         return {
             "mode": mode,
             "input": os.path.basename(audio_path),
             "segments": segments,
-            "role_mapping": role_map,
+            "role_mapping": {},
             "note": note,
         }
-

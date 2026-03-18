@@ -5,7 +5,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 def _run(cmd: List[str], timeout_sec: int) -> None:
@@ -30,7 +30,7 @@ def _run(cmd: List[str], timeout_sec: int) -> None:
         )
 
 
-def whisperx_diarize_via_cli(
+def whisperx_transcribe_via_cli(
     audio_path: str,
     *,
     venv_python: str,
@@ -40,11 +40,6 @@ def whisperx_diarize_via_cli(
     compute_type: str = "int8",
     batch_size: int = 4,
     vad_method: str = "silero",
-    diarize: bool = True,
-    diarize_model: str = "pyannote/speaker-diarization-3.1",
-    diarization_backend: str = "pyannote",
-    nemo_repo_dir: str = os.path.expanduser("~/whisper-diarization"),
-    hf_token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     worker = Path(__file__).with_name("whisperx_worker.py")
     if not os.path.exists(venv_python):
@@ -75,12 +70,6 @@ def whisperx_diarize_via_cli(
             "--vad-method",
             vad_method,
         ]
-        if diarize:
-            cmd.append("--diarize")
-            cmd += ["--diarize-model", diarize_model]
-            cmd += ["--diarization-backend", diarization_backend]
-            cmd += ["--nemo-repo-dir", nemo_repo_dir]
-            cmd += ["--hf-token", hf_token or os.getenv("HF_TOKEN", "")]
 
         _run(cmd, timeout_sec=timeout_sec)
 

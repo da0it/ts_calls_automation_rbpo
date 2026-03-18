@@ -51,14 +51,6 @@ class ASRCfg:
     piece_pad: float = 0.05
 
 @dataclass
-class PyannoteCfg:
-    min_duration_off: float = 0.1
-    min_duration_on: float = 0.1
-    num_speakers: int = 2
-
-    pipeline_name: str = "pyannote/speaker-diarization-3.1"
-
-@dataclass
 class StereoCfg:
     threshold: float = 0.98
     rms_diff_db: float = 1.0
@@ -70,7 +62,6 @@ class Config:
     silence: SilenceCfg = field(default_factory=SilenceCfg)
     turns: TurnsCfg = field(default_factory=TurnsCfg)
     asr: ASRCfg = field(default_factory=ASRCfg)
-    pyannote: PyannoteCfg = field(default_factory=PyannoteCfg)
     stereo: StereoCfg = field(default_factory=StereoCfg)
 
 CFG = Config()

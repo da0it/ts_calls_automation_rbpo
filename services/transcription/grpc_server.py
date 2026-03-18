@@ -83,13 +83,6 @@ class TranscriptionServicer(pb2_grpc.TranscriptionServiceServicer):
     
     def __init__(self):
         logger.info("Initializing TranscriptionServicer")
-        # Путь нужен только для whisperx+nemo diarization backend.
-        self.whisper_repo_dir = os.getenv(
-            "WHISPER_REPO_DIR", 
-            os.path.expanduser("~/whisper-diarization")
-        )
-        logger.info(f"WhisperX NeMo repo: {self.whisper_repo_dir}")
-
         self._maybe_warmup_whisperx()
 
     def _maybe_warmup_whisperx(self) -> None:
@@ -109,11 +102,6 @@ class TranscriptionServicer(pb2_grpc.TranscriptionServiceServicer):
                 device=os.getenv("WHISPERX_DEVICE", "cpu"),
                 compute_type=os.getenv("WHISPERX_COMPUTE_TYPE", "int8"),
                 vad_method=os.getenv("WHISPERX_VAD_METHOD", "silero").strip().lower(),
-                diarize=_env_bool("WHISPERX_DIARIZE", True),
-                diarization_backend=os.getenv("WHISPERX_DIARIZATION_BACKEND", "pyannote").strip().lower(),
-                diarize_model=os.getenv("WHISPERX_DIARIZE_MODEL", "pyannote/speaker-diarization-3.1"),
-                nemo_repo_dir=os.getenv("WHISPER_REPO_DIR", self.whisper_repo_dir),
-                hf_token=os.getenv("HF_TOKEN"),
             )
             logger.info("WhisperX preload completed.")
         except Exception as exc:
@@ -162,7 +150,6 @@ class TranscriptionServicer(pb2_grpc.TranscriptionServiceServicer):
             # Вызываем функцию транскрибации
             result = transcribe_with_roles(
                 audio_path=temp_file,
-                whisper_repo_dir=self.whisper_repo_dir,
             )
             
             # Создаем ответ
@@ -243,10 +230,6 @@ def serve():
     
     logger.info(f"Starting transcription server on {server_address}")
     logger.info(f"Max workers: {max_workers}")
-    logger.info(
-        "WhisperX NeMo repo: %s",
-        os.getenv("WHISPER_REPO_DIR", os.path.expanduser("~/whisper-diarization")),
-    )
     
     # Запускаем
     server.start()
