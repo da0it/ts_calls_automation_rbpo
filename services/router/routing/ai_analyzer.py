@@ -90,9 +90,9 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         started = time.time()
         prep = build_canonical([(s.start, s.text, s.role) for s in call.segments], self.preprocess_cfg)
         text = self._extract_text_with_context(prep.canonical_text, self.max_text_chars)
-        intent_ids = sorted(allowed_intents.keys())
+        runtime_intent_ids = sorted(allowed_intents.keys())
 
-        probs, meta = self._predict_with_finetuned_model(text, intent_ids)
+        probs, meta = self._predict_with_finetuned_model(text, runtime_intent_ids)
         if probs is None:
             return self._triage_result(
                 call_id=call.call_id,
@@ -103,6 +103,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 model_meta=meta,
             )
 
+        intent_ids = list(meta.get("intent_ids") or runtime_intent_ids)
         best_idx = int(torch.argmax(probs).item())
         best_intent_id = intent_ids[best_idx]
         confidence = float(probs[best_idx].item())
@@ -176,12 +177,14 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
 
         artifact_intents = list(artifact.get("intent_ids") or [])
         current_intents = sorted(allowed_intents.keys()) if allowed_intents else None
-        compatible = current_intents is None or artifact_intents == current_intents
+        compatible = current_intents is None or self._same_intent_set(artifact_intents, current_intents)
+        order_matches = current_intents is not None and artifact_intents == current_intents
 
         finetuned_model = artifact.get("finetuned_model") if isinstance(artifact.get("finetuned_model"), dict) else {}
         finetuned_ready = bool(finetuned_model and finetuned_model.get("enabled"))
         active = compatible and finetuned_ready
         reason = "ok" if active else ("intents_mismatch" if not compatible else "no_finetuned_model")
+        calibration = self._artifact_calibration(artifact)
 
         return {
             "active": active,
@@ -191,6 +194,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             "trained_at": artifact.get("trained_at", ""),
             "intent_ids": artifact_intents,
             "current_intents": current_intents,
+            "intent_order_matches_current": order_matches,
             "metrics": artifact.get("metrics", {}),
             "dataset": artifact.get("dataset", {}),
             "finetuned_model": {
@@ -198,6 +202,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 "active": active,
                 "model_path": finetuned_model.get("model_path", self.finetuned_model_path),
                 "metrics": finetuned_model.get("metrics", {}),
+                "calibration": calibration,
             },
             "last_train_report": report,
             "last_train_error": last_error,
@@ -329,7 +334,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
     def _predict_with_finetuned_model(
         self,
         text: str,
-        intent_ids: List[str],
+        runtime_intent_ids: List[str],
     ) -> Tuple[Optional[torch.Tensor], Dict[str, Any]]:
         if not self.finetuned_enabled:
             return None, {"active": False, "reason": "finetuned_disabled"}
@@ -343,17 +348,17 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         if not isinstance(finetuned_meta, dict) or not finetuned_meta.get("enabled"):
             return None, {"active": False, "reason": "no_finetuned_model"}
 
-        artifact_intents = list(artifact.get("intent_ids") or [])
-        if artifact_intents != intent_ids:
+        artifact_intents = self._artifact_intent_ids(artifact)
+        if not self._same_intent_set(artifact_intents, runtime_intent_ids):
             return None, {
                 "active": False,
                 "reason": "intents_mismatch",
                 "artifact_intents_n": len(artifact_intents),
-                "runtime_intents_n": len(intent_ids),
+                "runtime_intents_n": len(runtime_intent_ids),
             }
 
         try:
-            model, tokenizer, max_len = self._ensure_finetuned_model_loaded(artifact, intent_ids)
+            model, tokenizer, max_len = self._ensure_finetuned_model_loaded(artifact, artifact_intents)
             enc = tokenizer(
                 [text],
                 truncation=True,
@@ -362,13 +367,16 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 return_tensors="pt",
             )
             enc = {k: v.to(self.device) for k, v in enc.items()}
+            temperature = self._artifact_temperature(artifact)
             with torch.inference_mode():
                 logits = model(**enc).logits
-                probs = torch.softmax(logits, dim=1).squeeze(0)
+                probs = torch.softmax(logits / temperature, dim=1).squeeze(0)
             return probs, {
                 "active": True,
                 "trained_at": finetuned_meta.get("trained_at", ""),
                 "model_path": finetuned_meta.get("model_path", ""),
+                "intent_ids": artifact_intents,
+                "temperature": temperature,
             }
         except Exception as exc:
             logger.warning("Failed to run fine-tuned RuBERT head: %s", exc)
@@ -377,9 +385,9 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
     def _ensure_finetuned_model_loaded(
         self,
         artifact: Dict[str, Any],
-        intent_ids: List[str],
+        model_intent_ids: List[str],
     ) -> Tuple[AutoModelForSequenceClassification, Any, int]:
-        intent_key = tuple(intent_ids)
+        intent_key = tuple(model_intent_ids)
         finetuned_artifact = artifact.get("finetuned_model")
         if not isinstance(finetuned_artifact, dict):
             raise RuntimeError("finetuned model metadata is missing")
@@ -400,9 +408,9 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
             model.eval()
             tokenizer = AutoTokenizer.from_pretrained(model_path)
-            if int(model.config.num_labels) != len(intent_ids):
+            if int(model.config.num_labels) != len(model_intent_ids):
                 raise RuntimeError(
-                    f"finetuned model classes mismatch: model={int(model.config.num_labels)} runtime={len(intent_ids)}"
+                    f"finetuned model classes mismatch: model={int(model.config.num_labels)} runtime={len(model_intent_ids)}"
                 )
 
             self._finetuned_model = model
@@ -743,6 +751,41 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         rnd.shuffle(train_idx)
         rnd.shuffle(val_idx)
         return train_idx, val_idx
+
+    def _artifact_intent_ids(self, artifact: Dict[str, Any]) -> List[str]:
+        intent_ids = [str(x).strip() for x in list(artifact.get("intent_ids") or []) if str(x).strip()]
+        if intent_ids:
+            return intent_ids
+
+        finetuned_model = artifact.get("finetuned_model")
+        if isinstance(finetuned_model, dict):
+            nested = [str(x).strip() for x in list(finetuned_model.get("intent_ids") or []) if str(x).strip()]
+            if nested:
+                return nested
+        return []
+
+    def _artifact_calibration(self, artifact: Dict[str, Any]) -> Dict[str, Any]:
+        finetuned_model = artifact.get("finetuned_model")
+        if isinstance(finetuned_model, dict) and isinstance(finetuned_model.get("calibration"), dict):
+            return dict(finetuned_model.get("calibration") or {})
+        if isinstance(artifact.get("calibration"), dict):
+            return dict(artifact.get("calibration") or {})
+        return {}
+
+    def _artifact_temperature(self, artifact: Dict[str, Any]) -> float:
+        calibration = self._artifact_calibration(artifact)
+        try:
+            temperature = float(calibration.get("temperature", 1.0))
+        except Exception:
+            temperature = 1.0
+        if temperature <= 0.0:
+            return 1.0
+        return temperature
+
+    def _same_intent_set(self, left: List[str], right: List[str]) -> bool:
+        left_norm = [str(x).strip() for x in left if str(x).strip()]
+        right_norm = [str(x).strip() for x in right if str(x).strip()]
+        return len(left_norm) == len(right_norm) and set(left_norm) == set(right_norm)
 
     def _build_class_weights(self, labels: torch.Tensor, num_classes: int) -> torch.Tensor:
         counts = torch.bincount(labels, minlength=num_classes).float().clamp(min=1.0)
