@@ -16,6 +16,10 @@ build/
 # ==========================
 .gocache/
 .bin/
+**/gen/*.pb.go
+
+# Generated gRPC stubs
+**/grpc_gen/
 
 # ==========================
 # Runtime / Logs
