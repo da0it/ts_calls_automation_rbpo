@@ -20,6 +20,7 @@ from .models import AIAnalysis, CallInput, Evidence, IntentResult, Priority
 from .nlp_preprocess import PreprocessConfig, build_canonical
 
 logger = logging.getLogger(__name__)
+RESERVED_FALLBACK_INTENT_ID = "misc.triage"
 
 
 class AIAnalyzer:
@@ -178,7 +179,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         artifact_intents = list(artifact.get("intent_ids") or [])
         current_intents = sorted(allowed_intents.keys()) if allowed_intents else None
         compatible = current_intents is None or self._same_intent_set(artifact_intents, current_intents)
-        order_matches = current_intents is not None and artifact_intents == current_intents
+        order_matches = current_intents is not None and self._comparable_intent_ids(artifact_intents) == self._comparable_intent_ids(current_intents)
 
         finetuned_model = artifact.get("finetuned_model") if isinstance(artifact.get("finetuned_model"), dict) else {}
         finetuned_ready = bool(finetuned_model and finetuned_model.get("enabled"))
@@ -783,9 +784,16 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         return temperature
 
     def _same_intent_set(self, left: List[str], right: List[str]) -> bool:
-        left_norm = [str(x).strip() for x in left if str(x).strip()]
-        right_norm = [str(x).strip() for x in right if str(x).strip()]
+        left_norm = self._comparable_intent_ids(left)
+        right_norm = self._comparable_intent_ids(right)
         return len(left_norm) == len(right_norm) and set(left_norm) == set(right_norm)
+
+    def _comparable_intent_ids(self, values: List[str]) -> List[str]:
+        return [
+            str(x).strip()
+            for x in values
+            if str(x).strip() and str(x).strip() != RESERVED_FALLBACK_INTENT_ID
+        ]
 
     def _build_class_weights(self, labels: torch.Tensor, num_classes: int) -> torch.Tensor:
         counts = torch.bincount(labels, minlength=num_classes).float().clamp(min=1.0)

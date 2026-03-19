@@ -102,7 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_cls_priority  ON classification_results (priority
 CREATE INDEX IF NOT EXISTS idx_cls_group     ON classification_results (suggested_group);
 
 COMMENT ON TABLE  classification_results                  IS 'Результаты классификации интентов моделью ruBERT';
-COMMENT ON COLUMN classification_results.intent_id        IS 'Идентификатор интента (напр. sales.service_purchase)';
+COMMENT ON COLUMN classification_results.intent_id        IS 'Идентификатор интента (напр. license)';
 COMMENT ON COLUMN classification_results.intent_confidence IS 'Уверенность модели (0–1); порог автоматики — 0.85';
 COMMENT ON COLUMN classification_results.auto_routed      IS 'TRUE — тикет создан автоматически, FALSE — передан оператору';
 COMMENT ON COLUMN classification_results.raw_scores_json  IS 'Сырые скоры по всем интентам для аудита';

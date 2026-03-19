@@ -606,18 +606,20 @@
     const FALLBACK_CATALOG = {
       groups: [
         { id: 'technical_support', title: 'Техническая поддержка', description: 'Общие вопросы и первичная обработка.' },
-        { id: 'sales_department', title: 'Отдел продаж', description: 'Консультации и приобретение услуг.' },
-        { id: 'training_department', title: 'Отдел по обучению', description: 'Курсы и учебные программы.' },
-        { id: 'marketing_conferences', title: 'Маркетинговый отдел (конференции)', description: 'Конференции и мероприятия.' }
+        { id: 'sales_department', title: 'Отдел продаж', description: 'Консультации по продукту, лицензии и коммерческие обращения.' },
+        { id: 'training_department', title: 'Отдел обучения', description: 'Курсы и учебные программы.' },
+        { id: 'marketing_department', title: 'Маркетинг и партнерства', description: 'Маркетинговые инициативы и запросы на сотрудничество.' }
       ],
       intents: [
-        { id: 'spam.call', title: 'Спам', default_group: 'technical_support', priority: 'high', examples: ['это спам'] },
-        { id: 'training.courses', title: 'Обучение (курсы)', default_group: 'training_department', priority: 'medium', examples: ['хочу записаться на курс'] },
-        { id: 'consultation.general', title: 'Консультация', default_group: 'sales_department', priority: 'medium', examples: ['нужна консультация'] },
-        { id: 'sales.service_purchase', title: 'Приобретение услуг', default_group: 'sales_department', priority: 'high', examples: ['хочу купить услугу'] },
-        { id: 'conference.invite_company', title: 'Приглашение компании на конференцию', default_group: 'marketing_conferences', priority: 'medium', examples: ['приглашаем на конференцию'] },
-        { id: 'conference.company_participation', title: 'Участие компании в конференции', default_group: 'marketing_conferences', priority: 'medium', examples: ['хотим участвовать в конференции'] },
-        { id: 'misc.triage', title: 'Неопределенное обращение', default_group: 'technical_support', priority: 'medium', examples: ['есть вопрос'] }
+        { id: 'consulting', title: 'Консультация', default_group: 'sales_department', priority: 'medium', examples: ['нужна консультация'] },
+        { id: 'cooperation', title: 'Сотрудничество', default_group: 'marketing_department', priority: 'medium', examples: ['интересует сотрудничество'] },
+        { id: 'courses', title: 'Курсы и обучение', default_group: 'training_department', priority: 'medium', examples: ['хочу записаться на курс'] },
+        { id: 'escalation', title: 'Эскалация', default_group: 'technical_support', priority: 'high', examples: ['ситуация критическая'] },
+        { id: 'license', title: 'Лицензия', default_group: 'sales_department', priority: 'high', examples: ['хочу купить лицензию'] },
+        { id: 'marketing', title: 'Маркетинг', default_group: 'marketing_department', priority: 'medium', examples: ['есть маркетинговое предложение'] },
+        { id: 'misc.triage', title: 'Неопределенное обращение', default_group: 'technical_support', priority: 'medium', examples: ['есть вопрос'] },
+        { id: 'portal_access', title: 'Доступ в портал', default_group: 'technical_support', priority: 'high', examples: ['не могу войти в портал'] },
+        { id: 'spam', title: 'Спам', default_group: 'technical_support', priority: 'high', examples: ['это спам'] }
       ]
     };
 
@@ -1302,11 +1304,11 @@
               <form id="add-group-form" class="${groupFormClass}">
                 <div class="row">
                   <label>New group id</label>
-                  <input id="add-group-id" placeholder="marketing_conferences" />
+                  <input id="add-group-id" placeholder="marketing_department" />
                 </div>
                 <div class="row">
                   <label>New group title</label>
-                  <input id="add-group-title" placeholder="Маркетинговый отдел (конференции)" />
+                  <input id="add-group-title" placeholder="Маркетинг и партнерства" />
                 </div>
                 <div class="row">
                   <label>Description</label>
@@ -1339,11 +1341,11 @@
               <form id="add-intent-form" class="${intentFormClass}">
                 <div class="row">
                   <label>New intent id</label>
-                  <input id="add-intent-id" placeholder="conference.invite_company" />
+                  <input id="add-intent-id" placeholder="cooperation" />
                 </div>
                 <div class="row">
                   <label>Intent title</label>
-                  <input id="add-intent-title" placeholder="Приглашение компании на конференцию" />
+                  <input id="add-intent-title" placeholder="Сотрудничество" />
                 </div>
                 <div class="row">
                   <label>Default group</label>

@@ -11,6 +11,8 @@ from typing import Any, Dict, Iterable, List, Tuple
 import joblib
 import torch
 
+RESERVED_FALLBACK_INTENT_ID = "misc.triage"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Import external fine-tuned router model into local artifact format.")
@@ -73,6 +75,10 @@ def normalize_intent_ids(values: Iterable[Any]) -> List[str]:
         seen.add(value)
         out.append(value)
     return out
+
+
+def comparable_intent_ids(values: Iterable[Any]) -> List[str]:
+    return [value for value in normalize_intent_ids(values) if value != RESERVED_FALLBACK_INTENT_ID]
 
 
 def extract_intent_ids_from_label_encoder(obj: Any) -> List[str]:
@@ -224,8 +230,8 @@ def main() -> int:
     model_intents, mapping_source = load_model_intent_ids(source_dir, label_encoder_path)
     calibration = load_temperature_calibration(source_dir, temperature_path)
 
-    runtime_set = set(runtime_intents)
-    model_set = set(model_intents)
+    runtime_set = set(comparable_intent_ids(runtime_intents))
+    model_set = set(comparable_intent_ids(model_intents))
     missing_in_model = sorted(runtime_set - model_set)
     extra_in_model = sorted(model_set - runtime_set)
     if missing_in_model or extra_in_model:
