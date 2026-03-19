@@ -1,0 +1,106 @@
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: "#ebf5fb"
+    primaryTextColor: "#2c3e50"
+    primaryBorderColor: "#2980b9"
+    lineColor: "#2c3e50"
+    secondaryColor: "#eafaf1"
+    tertiaryColor: "#fef9e7"
+    noteBkgColor: "#fef9e7"
+    noteTextColor: "#9a6a0a"
+    fontFamily: "Arial"
+---
+flowchart TD
+    %% ── ДОРОЖКИ ────────────────────────────────────────────────────────────
+    subgraph IP["🏢 IP-телефония"]
+        A([Клиент совершает звонок])
+        B[Оператор 1-й линии\nпринимает звонок]
+        C[Разговор завершён.\nЗапись сохранена]
+    end
+
+    subgraph SYS["⚙️ Система автоматической обработки"]
+        D[/"API: аудио + метаданные\n(call_id, агент, дата)"/]
+        E[Audio Processor:\nнормализация, конвертация\nв WAV 16 кГц моно]
+        F[ASR-модуль — WhisperX:\nтранскрибация + диаризация\n агент / звонящий ]
+        G[NLP-модуль — ruBERT:\nклассификация интента,\nопределение приоритета]
+        H{Уверенность\nмодели\n≥ 0.85?}
+        I[Локальная LLM:\nгенерация саммари звонка]
+        J[Автоматическое создание\nтикета в системе поддержки\n интент, группа, приоритет ]
+        K[Тикет передаётся\nоператору на проверку\n уверенность < 0.85 ]
+        L[Уведомление исполнителю\nпо тикету]
+        M[(PostgreSQL:\nсохранение результатов)]
+    end
+
+    subgraph OPR["👤 Оператор 1-й линии"]
+        N{Оператор согласен\nс предсказанием?}
+        O[Оператор корректирует:\nгруппу / интент / приоритет]
+        P[/"Исправление сохраняется\nв датасет обратной связи\n(routing_feedback.jsonl)"/]
+        Q[Тикет подтверждён\nи закрыт оператором]
+    end
+
+    subgraph ADM["🔑 Администратор"]
+        R{Накоплено достаточно\nданных для дообучения?}
+        S[Администратор размечает\nи валидирует датасет]
+        T[Дообучение ruBERT\nна новых данных]
+        U[Обновлённая модель\nразвёрнута в продакшн]
+    end
+
+    %% ── ОСНОВНОЙ ПОТОК ──────────────────────────────────────────────────────
+    A --> B
+    B --> C
+    C -->|"Автоматическая передача\nчерез интеграцию с IP-АТС"| D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+
+    H -->|"Да"| I
+    H -->|"Нет"| K
+
+    I --> J
+    J --> L
+    L --> M
+
+    K --> N
+    N -->|"Да — подтверждает"| Q
+    N -->|"Нет — исправляет"| O
+    O --> P
+    O --> Q
+    P --> M
+    Q --> M
+
+    %% ── ПЕТЛЯ ДООБУЧЕНИЯ ────────────────────────────────────────────────────
+    M -->|"Накопление\nобратной связи"| R
+    R -->|"Да"| S
+    R -->|"Нет — ждём"| M
+    S --> T
+    T --> U
+    U -->|"Обновлённая модель\nвступает в работу"| G
+
+    %% ── СТИЛИ ───────────────────────────────────────────────────────────────
+    style A fill:#d5f5e3,stroke:#27ae60,color:#1e8449
+    style B fill:#d5f5e3,stroke:#27ae60,color:#1e8449
+    style C fill:#d5f5e3,stroke:#27ae60,color:#1e8449
+
+    style D fill:#ebf5fb,stroke:#2980b9,color:#1a5276
+    style E fill:#ebf5fb,stroke:#2980b9,color:#1a5276
+    style F fill:#ebf5fb,stroke:#2980b9,color:#1a5276
+    style G fill:#ebf5fb,stroke:#2980b9,color:#1a5276
+    style H fill:#fef9e7,stroke:#e67e22,color:#9a6a0a
+    style I fill:#ebf5fb,stroke:#2980b9,color:#1a5276
+    style J fill:#ebf5fb,stroke:#2980b9,color:#1a5276
+    style K fill:#fdebd0,stroke:#e67e22,color:#9a6a0a
+    style L fill:#ebf5fb,stroke:#2980b9,color:#1a5276
+    style M fill:#f5eef8,stroke:#8e44ad,color:#6c3483
+
+    style N fill:#fef9e7,stroke:#e67e22,color:#9a6a0a
+    style O fill:#fdebd0,stroke:#e67e22,color:#9a6a0a
+    style P fill:#fdebd0,stroke:#e67e22,color:#9a6a0a
+    style Q fill:#d5f5e3,stroke:#27ae60,color:#1e8449
+
+    style R fill:#fef9e7,stroke:#e67e22,color:#9a6a0a
+    style S fill:#f5eef8,stroke:#8e44ad,color:#6c3483
+    style T fill:#f5eef8,stroke:#8e44ad,color:#6c3483
+    style U fill:#f5eef8,stroke:#8e44ad,color:#6c3483

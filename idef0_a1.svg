@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1050" viewBox="0 0 1600 1050" font-family="Arial, sans-serif">
+
+  <!-- Background -->
+  <rect width="1600" height="1050" fill="#f8f9fa"/>
+
+  <!-- Title block -->
+  <rect x="20" y="20" width="1560" height="50" fill="#2c3e50" rx="4"/>
+  <text x="800" y="52" text-anchor="middle" font-size="20" font-weight="bold" fill="white">IDEF0 | A0 | Декомпозиция: Обработка телефонного звонка</text>
+
+  <!-- Node number -->
+  <rect x="20" y="990" width="120" height="40" fill="#2c3e50" rx="4"/>
+  <text x="80" y="1016" text-anchor="middle" font-size="14" font-weight="bold" fill="white">Узел: A0</text>
+
+  <!-- Arrow defs -->
+  <defs>
+    <marker id="arr-g" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 9 3, 0 6" fill="#27ae60"/>
+    </marker>
+    <marker id="arr-b" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 9 3, 0 6" fill="#2980b9"/>
+    </marker>
+    <marker id="arr-o" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 9 3, 0 6" fill="#e67e22"/>
+    </marker>
+    <marker id="arr-p" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 9 3, 0 6" fill="#8e44ad"/>
+    </marker>
+  </defs>
+
+  <!-- ===== A1: Аутентификация и приём запроса ===== -->
+  <rect x="155" y="130" width="220" height="120" fill="white" stroke="#2c3e50" stroke-width="2.5" rx="5"/>
+  <text x="265" y="175" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">A1. Аутентификация</text>
+  <text x="265" y="193" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">и приём запроса</text>
+  <text x="265" y="213" text-anchor="middle" font-size="10" fill="#7f8c8d">Orchestrator HTTP/gRPC</text>
+  <text x="265" y="228" text-anchor="middle" font-size="10" fill="#7f8c8d">Валидация JWT-токена</text>
+  <text x="359" y="248" text-anchor="end" font-size="10" fill="#95a5a6" font-style="italic">A1</text>
+
+  <!-- ===== A2: Транскрибация ===== -->
+  <rect x="490" y="130" width="220" height="120" fill="white" stroke="#2c3e50" stroke-width="2.5" rx="5"/>
+  <text x="600" y="175" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">A2. Транскрибация</text>
+  <text x="600" y="193" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">и диаризация</text>
+  <text x="600" y="213" text-anchor="middle" font-size="10" fill="#7f8c8d">WhisperX large-v3 (RU)</text>
+  <text x="600" y="228" text-anchor="middle" font-size="10" fill="#7f8c8d">PyAnnote / NeMo диаризация</text>
+  <text x="694" y="248" text-anchor="end" font-size="10" fill="#95a5a6" font-style="italic">A2</text>
+
+  <!-- ===== A3: Маршрутизация ===== -->
+  <rect x="155" y="380" width="220" height="120" fill="white" stroke="#2c3e50" stroke-width="2.5" rx="5"/>
+  <text x="265" y="425" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">A3. Классификация</text>
+  <text x="265" y="443" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">и маршрутизация</text>
+  <text x="265" y="463" text-anchor="middle" font-size="10" fill="#7f8c8d">ruBERT + DialogHead</text>
+  <text x="265" y="478" text-anchor="middle" font-size="10" fill="#7f8c8d">Интент → Подразделение</text>
+  <text x="359" y="498" text-anchor="end" font-size="10" fill="#95a5a6" font-style="italic">A3</text>
+
+  <!-- ===== A4: Извлечение сущностей ===== -->
+  <rect x="490" y="380" width="220" height="120" fill="white" stroke="#2c3e50" stroke-width="2.5" rx="5"/>
+  <text x="600" y="420" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">A4. Извлечение</text>
+  <text x="600" y="438" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">сущностей (NER)</text>
+  <text x="600" y="458" text-anchor="middle" font-size="10" fill="#7f8c8d">DeepPavlov ner_rus_bert</text>
+  <text x="600" y="473" text-anchor="middle" font-size="10" fill="#7f8c8d">ФИО, телефоны, суммы...</text>
+  <text x="694" y="498" text-anchor="end" font-size="10" fill="#95a5a6" font-style="italic">A4</text>
+
+  <!-- ===== A5: Создание тикета ===== -->
+  <rect x="820" y="380" width="220" height="120" fill="white" stroke="#2c3e50" stroke-width="2.5" rx="5"/>
+  <text x="930" y="420" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">A5. Создание тикета</text>
+  <text x="930" y="438" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">и суммаризация</text>
+  <text x="930" y="458" text-anchor="middle" font-size="10" fill="#7f8c8d">Локальная LLM (on-premise)</text>
+  <text x="930" y="473" text-anchor="middle" font-size="10" fill="#7f8c8d">Ticket System Adapter</text>
+  <text x="1024" y="498" text-anchor="end" font-size="10" fill="#95a5a6" font-style="italic">A5</text>
+
+  <!-- ===== A6: Уведомление ===== -->
+  <rect x="820" y="630" width="220" height="120" fill="white" stroke="#2c3e50" stroke-width="2.5" rx="5"/>
+  <text x="930" y="675" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">A6. Отправка</text>
+  <text x="930" y="693" text-anchor="middle" font-size="13" font-weight="bold" fill="#2c3e50">уведомлений</text>
+  <text x="930" y="713" text-anchor="middle" font-size="10" fill="#7f8c8d">Email / Chat / Log</text>
+  <text x="930" y="728" text-anchor="middle" font-size="10" fill="#7f8c8d">Notification Service</text>
+  <text x="1024" y="748" text-anchor="end" font-size="10" fill="#95a5a6" font-style="italic">A6</text>
+
+  <!-- ================================================================
+       EXTERNAL INPUTS (left boundary)
+       ================================================================ -->
+  <!-- I1: Audio -->
+  <line x1="60" y1="175" x2="155" y2="175" stroke="#27ae60" stroke-width="2" marker-end="url(#arr-g)"/>
+  <rect x="10" y="155" width="105" height="40" fill="#eafaf1" stroke="#27ae60" stroke-width="1.5" rx="3"/>
+  <text x="62" y="170" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e8449">Аудиозапись</text>
+  <text x="62" y="183" text-anchor="middle" font-size="9" fill="#27ae60">MP3 / WAV</text>
+  <text x="14" y="152" font-size="9" fill="#95a5a6">I1</text>
+
+  <!-- I2: Metadata -->
+  <line x1="60" y1="215" x2="155" y2="215" stroke="#27ae60" stroke-width="2" marker-end="url(#arr-g)"/>
+  <rect x="10" y="200" width="105" height="35" fill="#eafaf1" stroke="#27ae60" stroke-width="1.5" rx="3"/>
+  <text x="62" y="215" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e8449">Метаданные</text>
+  <text x="62" y="228" text-anchor="middle" font-size="9" fill="#27ae60">call_id, агент</text>
+  <text x="14" y="198" font-size="9" fill="#95a5a6">I2</text>
+
+  <!-- ================================================================
+       A1 → A2: validated request + audio
+       ================================================================ -->
+  <line x1="375" y1="175" x2="490" y2="175" stroke="#27ae60" stroke-width="2" marker-end="url(#arr-g)"/>
+  <rect x="378" y="155" width="110" height="35" fill="#eafaf1" stroke="#27ae60" stroke-width="1" rx="3"/>
+  <text x="433" y="168" text-anchor="middle" font-size="9" font-weight="bold" fill="#1e8449">Подтверждённый</text>
+  <text x="433" y="180" text-anchor="middle" font-size="9" fill="#1e8449">запрос + аудио</text>
+
+  <!-- ================================================================
+       A2 → A3: Transcript (вниз и влево)
+       ================================================================ -->
+  <polyline points="600,250 600,310 265,310 265,380" fill="none" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <rect x="530" y="285" width="120" height="35" fill="#ebf5fb" stroke="#2980b9" stroke-width="1" rx="3"/>
+  <text x="590" y="298" text-anchor="middle" font-size="9" font-weight="bold" fill="#1a5276">Транскрипт</text>
+  <text x="590" y="311" text-anchor="middle" font-size="9" fill="#2980b9">сегменты + роли</text>
+
+  <!-- ================================================================
+       A2 → A4: Transcript (вниз)
+       ================================================================ -->
+  <line x1="600" y1="250" x2="600" y2="380" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <text x="612" y="330" font-size="9" fill="#2980b9">Транскрипт</text>
+
+  <!-- ================================================================
+       A3 → A5: Routing result
+       ================================================================ -->
+  <polyline points="375,440 720,440 820,440" fill="none" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <rect x="453" y="420" width="110" height="35" fill="#ebf5fb" stroke="#2980b9" stroke-width="1" rx="3"/>
+  <text x="508" y="433" text-anchor="middle" font-size="9" font-weight="bold" fill="#1a5276">Маршрут</text>
+  <text x="508" y="446" text-anchor="middle" font-size="9" fill="#2980b9">интент + группа</text>
+
+  <!-- ================================================================
+       A4 → A5: Entities
+       ================================================================ -->
+  <line x1="710" y1="460" x2="820" y2="460" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <rect x="715" y="443" width="100" height="35" fill="#ebf5fb" stroke="#2980b9" stroke-width="1" rx="3"/>
+  <text x="765" y="455" text-anchor="middle" font-size="9" font-weight="bold" fill="#1a5276">Сущности</text>
+  <text x="765" y="468" text-anchor="middle" font-size="9" fill="#2980b9">ФИО, телефоны...</text>
+
+  <!-- ================================================================
+       A5 → A6: Ticket created
+       ================================================================ -->
+  <line x1="930" y1="500" x2="930" y2="630" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <rect x="880" y="545" width="100" height="35" fill="#ebf5fb" stroke="#2980b9" stroke-width="1" rx="3"/>
+  <text x="930" y="558" text-anchor="middle" font-size="9" font-weight="bold" fill="#1a5276">Тикет создан</text>
+  <text x="930" y="571" text-anchor="middle" font-size="9" fill="#2980b9">ticket_id, url</text>
+
+  <!-- ================================================================
+       EXTERNAL OUTPUTS (right boundary)
+       ================================================================ -->
+  <!-- O1: Ticket in system -->
+  <line x1="1040" y1="430" x2="1140" y2="430" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <rect x="1140" y="412" width="130" height="40" fill="#ebf5fb" stroke="#2980b9" stroke-width="1.5" rx="3"/>
+  <text x="1205" y="427" text-anchor="middle" font-size="10" font-weight="bold" fill="#1a5276">Тикет в системе</text>
+  <text x="1205" y="442" text-anchor="middle" font-size="9" fill="#2980b9">поддержки</text>
+  <text x="1145" y="409" font-size="9" fill="#95a5a6">O1</text>
+
+  <!-- O2: Audit log -->
+  <line x1="1040" y1="475" x2="1140" y2="475" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <rect x="1140" y="457" width="130" height="40" fill="#ebf5fb" stroke="#2980b9" stroke-width="1.5" rx="3"/>
+  <text x="1205" y="472" text-anchor="middle" font-size="10" font-weight="bold" fill="#1a5276">Лог аудита</text>
+  <text x="1205" y="487" text-anchor="middle" font-size="9" fill="#2980b9">PostgreSQL</text>
+  <text x="1145" y="454" font-size="9" fill="#95a5a6">O2</text>
+
+  <!-- O3: Notification sent -->
+  <line x1="1040" y1="700" x2="1140" y2="700" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <rect x="1140" y="682" width="130" height="40" fill="#ebf5fb" stroke="#2980b9" stroke-width="1.5" rx="3"/>
+  <text x="1205" y="697" text-anchor="middle" font-size="10" font-weight="bold" fill="#1a5276">Уведомление</text>
+  <text x="1205" y="712" text-anchor="middle" font-size="9" fill="#2980b9">отправлено</text>
+  <text x="1145" y="679" font-size="9" fill="#95a5a6">O3</text>
+
+  <!-- ================================================================
+       CONTROLS (top)
+       ================================================================ -->
+  <!-- C1: JWT Policy → A1 -->
+  <line x1="265" y1="90" x2="265" y2="130" stroke="#e67e22" stroke-width="2" marker-end="url(#arr-o)"/>
+  <rect x="175" y="60" width="175" height="35" fill="#fef9e7" stroke="#e67e22" stroke-width="1.5" rx="3"/>
+  <text x="262" y="73" text-anchor="middle" font-size="10" font-weight="bold" fill="#9a6a0a">Политика безопасности</text>
+  <text x="262" y="87" text-anchor="middle" font-size="9" fill="#e67e22">JWT / роли (admin, operator)</text>
+  <text x="178" y="58" font-size="9" fill="#95a5a6">C1</text>
+
+  <!-- C2: Intents/Groups → A3 -->
+  <line x1="265" y1="345" x2="265" y2="380" stroke="#e67e22" stroke-width="2" marker-end="url(#arr-o)"/>
+  <rect x="155" y="315" width="220" height="35" fill="#fef9e7" stroke="#e67e22" stroke-width="1.5" rx="3"/>
+  <text x="265" y="328" text-anchor="middle" font-size="10" font-weight="bold" fill="#9a6a0a">Правила маршрутизации</text>
+  <text x="265" y="342" text-anchor="middle" font-size="9" fill="#e67e22">intents.json + groups.json</text>
+  <text x="158" y="313" font-size="9" fill="#95a5a6">C2</text>
+
+  <!-- C3: Feedback loop → A3 (пунктир) -->
+  <polyline points="265,498 265,560 130,560 130,330 265,330 265,380" fill="none" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr-o)"/>
+  <rect x="25" y="530" width="110" height="35" fill="#fef9e7" stroke="#e67e22" stroke-width="1" rx="3"/>
+  <text x="80" y="543" text-anchor="middle" font-size="9" font-weight="bold" fill="#9a6a0a">Обратная связь</text>
+  <text x="80" y="556" text-anchor="middle" font-size="9" fill="#e67e22">ML дообучение</text>
+  <text x="28" y="528" font-size="9" fill="#95a5a6">C3</text>
+
+  <!-- ================================================================
+       MECHANISMS (bottom)
+       ================================================================ -->
+  <!-- M1: Orchestrator + REST API → A1 -->
+  <line x1="215" y1="800" x2="215" y2="750" stroke="#8e44ad" stroke-width="1.5" marker-end="url(#arr-p)"/>
+  <rect x="120" y="800" width="190" height="42" fill="#f5eef8" stroke="#8e44ad" stroke-width="1.5" rx="3"/>
+  <text x="215" y="816" text-anchor="middle" font-size="10" font-weight="bold" fill="#6c3483">Orchestrator</text>
+  <text x="215" y="830" text-anchor="middle" font-size="9" fill="#8e44ad">Go / REST API / gRPC</text>
+  <text x="215" y="843" text-anchor="middle" font-size="9" fill="#95a5a6">M1</text>
+
+  <!-- M2: WhisperX → A2 -->
+  <line x1="600" y1="800" x2="600" y2="750" stroke="#8e44ad" stroke-width="1.5" marker-end="url(#arr-p)"/>
+  <rect x="495" y="800" width="210" height="42" fill="#f5eef8" stroke="#8e44ad" stroke-width="1.5" rx="3"/>
+  <text x="600" y="816" text-anchor="middle" font-size="10" font-weight="bold" fill="#6c3483">WhisperX + PyAnnote</text>
+  <text x="600" y="830" text-anchor="middle" font-size="9" fill="#8e44ad">Python / GPU (локально)</text>
+  <text x="600" y="843" text-anchor="middle" font-size="9" fill="#95a5a6">M2</text>
+
+  <!-- M3: ruBERT → A3 -->
+  <line x1="215" y1="870" x2="215" y2="500" stroke="#8e44ad" stroke-width="1.5" marker-end="url(#arr-p)"/>
+  <rect x="120" y="870" width="190" height="42" fill="#f5eef8" stroke="#8e44ad" stroke-width="1.5" rx="3"/>
+  <text x="215" y="886" text-anchor="middle" font-size="10" font-weight="bold" fill="#6c3483">ruBERT + DialogHead</text>
+  <text x="215" y="900" text-anchor="middle" font-size="9" fill="#8e44ad">PyTorch / локально</text>
+  <text x="215" y="913" text-anchor="middle" font-size="9" fill="#95a5a6">M3</text>
+
+  <!-- M4: DeepPavlov → A4 -->
+  <line x1="600" y1="870" x2="600" y2="500" stroke="#8e44ad" stroke-width="1.5" marker-end="url(#arr-p)"/>
+  <rect x="495" y="870" width="210" height="42" fill="#f5eef8" stroke="#8e44ad" stroke-width="1.5" rx="3"/>
+  <text x="600" y="886" text-anchor="middle" font-size="10" font-weight="bold" fill="#6c3483">DeepPavlov NER</text>
+  <text x="600" y="900" text-anchor="middle" font-size="9" fill="#8e44ad">ner_rus_bert / локально</text>
+  <text x="600" y="913" text-anchor="middle" font-size="9" fill="#95a5a6">M4</text>
+
+  <!-- M5: Local LLM + PostgreSQL → A5 -->
+  <line x1="930" y1="800" x2="930" y2="750" stroke="#8e44ad" stroke-width="1.5" marker-end="url(#arr-p)"/>
+  <rect x="820" y="800" width="220" height="42" fill="#f5eef8" stroke="#8e44ad" stroke-width="1.5" rx="3"/>
+  <text x="930" y="816" text-anchor="middle" font-size="10" font-weight="bold" fill="#6c3483">Локальная LLM + PostgreSQL</text>
+  <text x="930" y="830" text-anchor="middle" font-size="9" fill="#8e44ad">on-premise / Go</text>
+  <text x="930" y="843" text-anchor="middle" font-size="9" fill="#95a5a6">M5</text>
+
+  <!-- M6: Notification channels → A6 -->
+  <line x1="930" y1="870" x2="930" y2="750" stroke="#8e44ad" stroke-width="1.5" marker-end="url(#arr-p)"/>
+  <rect x="820" y="870" width="220" height="42" fill="#f5eef8" stroke="#8e44ad" stroke-width="1.5" rx="3"/>
+  <text x="930" y="886" text-anchor="middle" font-size="10" font-weight="bold" fill="#6c3483">Email / Chat / Log</text>
+  <text x="930" y="900" text-anchor="middle" font-size="9" fill="#8e44ad">Python / Notification Svc</text>
+  <text x="930" y="913" text-anchor="middle" font-size="9" fill="#95a5a6">M6</text>
+
+  <!-- ================================================================
+       LEGEND
+       ================================================================ -->
+  <rect x="1290" y="130" width="285" height="200" fill="white" stroke="#bdc3c7" stroke-width="1.5" rx="4"/>
+  <text x="1300" y="155" font-size="13" font-weight="bold" fill="#2c3e50">Условные обозначения:</text>
+  <line x1="1300" y1="175" x2="1340" y2="175" stroke="#27ae60" stroke-width="2" marker-end="url(#arr-g)"/>
+  <text x="1348" y="180" font-size="11" fill="#2c3e50">Входы (Inputs)</text>
+  <line x1="1300" y1="200" x2="1340" y2="200" stroke="#2980b9" stroke-width="2" marker-end="url(#arr-b)"/>
+  <text x="1348" y="205" font-size="11" fill="#2c3e50">Выходы (Outputs)</text>
+  <line x1="1300" y1="225" x2="1340" y2="225" stroke="#e67e22" stroke-width="2" marker-end="url(#arr-o)"/>
+  <text x="1348" y="230" font-size="11" fill="#2c3e50">Управление (Controls)</text>
+  <line x1="1300" y1="250" x2="1340" y2="250" stroke="#8e44ad" stroke-width="2" marker-end="url(#arr-p)"/>
+  <text x="1348" y="255" font-size="11" fill="#2c3e50">Механизмы (Mechanisms)</text>
+  <line x1="1300" y1="275" x2="1340" y2="275" stroke="#e67e22" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-o)"/>
+  <text x="1348" y="280" font-size="11" fill="#2c3e50">Обратная связь</text>
+  <text x="1348" y="295" font-size="11" fill="#2c3e50">(петля обучения)</text>
+
+</svg>

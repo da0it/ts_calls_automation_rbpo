@@ -31,7 +31,7 @@ Edit:
 
 Important:
 
-- Set real `HF_TOKEN` for whisperx/pyannote mode.
+- Set real `HF_TOKEN` only if your WhisperX model download path requires it.
 - Ensure `DATABASE_URL` points to postgres.
 - If not using docker postgres, set `START_POSTGRES_WITH_DOCKER=0`.
 
@@ -46,7 +46,6 @@ This script creates:
 - `.venv` for entity extraction
 - `services/router/venv`
 - `~/whisperx_venv` (WhisperX runtime)
-- optional `~/whisper-diarization` only if `INSTALL_NEMO_BACKEND=1`
 - installs Python/Go dependencies
 
 ## 5. Smoke run

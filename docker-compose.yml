@@ -44,8 +44,7 @@ services:
     environment:
       GRPC_HOST: 0.0.0.0
       TRANSCRIPTION_GRPC_PORT: 50051
-      WHISPER_REPO_DIR: /opt/whisper-diarization
-      WHISPERX_VENV_PYTHON: /opt/whisper-diarization/whisper_venv/bin/python
+      WHISPERX_VENV_PYTHON: /opt/whisperx_venv/bin/python
       HF_HUB_OFFLINE: "0"
       TRANSFORMERS_OFFLINE: "0"
       FFMPEG_BIN: ffmpeg

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Linux host with Docker Engine + Docker Compose plugin
-- At least 16 GB RAM recommended (WhisperX + NeMo on CPU)
+- At least 16 GB RAM recommended (WhisperX on CPU)
 - Enough disk for model caches
 
 ## 1. Configure env
@@ -19,8 +19,7 @@ Edit these files:
 
 Important settings:
 
-- `HF_TOKEN` for whisperx/pyannote path (if needed)
-- `WHISPERX_DIARIZATION_BACKEND` (`nemo` or `pyannote`)
+- `HF_TOKEN` if your WhisperX model download path needs authentication
 
 ## 2. Build
 
