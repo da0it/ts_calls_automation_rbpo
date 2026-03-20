@@ -27,6 +27,7 @@ razdel==0.5.0
 regex==2026.1.15
 requests==2.32.5
 safetensors==0.7.0
+scikit-learn==1.7.2
 setuptools==80.9.0
 slovnet==0.6.0
 sortedcontainers==2.4.0

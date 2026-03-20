@@ -63,6 +63,22 @@ def _build_grpc_server_credentials(prefix: str):
     return grpc.ssl_server_credentials(((key_data, cert_data),))
 
 
+def _spam_check_from_analysis(raw: Dict[str, Any]) -> pb2.SpamCheck:
+    payload = raw.get("spam_decision") if isinstance(raw, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return pb2.SpamCheck(
+        status=str(payload.get("status") or ""),
+        predicted_label=str(payload.get("predicted_label") or ""),
+        confidence=float(payload.get("confidence") or 0.0),
+        threshold_low=float(payload.get("threshold_low") or 0.0),
+        threshold_high=float(payload.get("threshold_high") or 0.0),
+        reason=str(payload.get("reason") or ""),
+        skipped=bool(payload.get("skipped")),
+        backend=str(payload.get("backend") or ""),
+    )
+
+
 class RoutingService(pb2_grpc.RoutingServiceServicer):
     def __init__(
         self,
@@ -132,7 +148,11 @@ class RoutingService(pb2_grpc.RoutingServiceServicer):
                 meta={},
             )
 
-            analysis = self.analyzer.analyze(call, self._get_intents())
+            analysis = self.analyzer.analyze(
+                call,
+                self._get_intents(),
+                skip_spam_gate=bool(request.skip_spam_gate),
+            )
 
             suggested_group = ""
             for target in analysis.suggested_targets:
@@ -150,6 +170,7 @@ class RoutingService(pb2_grpc.RoutingServiceServicer):
                     intent_confidence=float(analysis.intent.confidence),
                     priority=priority,
                     suggested_group=suggested_group,
+                    spam_check=_spam_check_from_analysis(analysis.raw),
                 )
             )
             return response
@@ -348,6 +369,18 @@ def serve() -> None:
     finetuned_batch_size = int(os.getenv("ROUTER_FINETUNED_BATCH_SIZE", "16"))
     finetuned_max_length = int(os.getenv("ROUTER_FINETUNED_MAX_LENGTH", "256"))
     finetuned_weight_decay = float(os.getenv("ROUTER_FINETUNED_WEIGHT_DECAY", "0.01"))
+    spam_gate_enabled = os.getenv("ROUTER_SPAM_GATE_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+    spam_gate_model_path = os.getenv(
+        "ROUTER_SPAM_GATE_MODEL_PATH",
+        str(Path(__file__).parent / "configs" / "router_spam_model"),
+    )
+    spam_gate_artifact_path = os.getenv(
+        "ROUTER_SPAM_GATE_ARTIFACT_PATH",
+        str(Path(__file__).parent / "configs" / "router_spam_gate.pt"),
+    )
+    spam_gate_threshold = float(os.getenv("ROUTER_SPAM_GATE_THRESHOLD", "0.8"))
+    spam_gate_allow_threshold = float(os.getenv("ROUTER_SPAM_GATE_ALLOW_THRESHOLD", "0.35"))
+    spam_gate_positive_label = os.getenv("ROUTER_SPAM_GATE_POSITIVE_LABEL", "spam").strip() or "spam"
 
     train_defaults = {
         "epochs": int(os.getenv("ROUTER_TRAIN_EPOCHS", "3")),
@@ -370,6 +403,12 @@ def serve() -> None:
         finetuned_batch_size=finetuned_batch_size,
         finetuned_max_length=finetuned_max_length,
         finetuned_weight_decay=finetuned_weight_decay,
+        spam_gate_enabled=spam_gate_enabled,
+        spam_gate_model_path=spam_gate_model_path,
+        spam_gate_artifact_path=spam_gate_artifact_path,
+        spam_gate_threshold=spam_gate_threshold,
+        spam_gate_allow_threshold=spam_gate_allow_threshold,
+        spam_gate_positive_label=spam_gate_positive_label,
     )
 
     routing_service = RoutingService(

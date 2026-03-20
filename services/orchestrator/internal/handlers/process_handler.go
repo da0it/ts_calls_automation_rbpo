@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"orchestrator/internal/clients"
 	"orchestrator/internal/models"
 	"orchestrator/internal/services"
 )
@@ -19,6 +20,7 @@ type ProcessHandler struct {
 	orchestrator           *services.OrchestratorService
 	routingConfigService   *services.RoutingConfigService
 	routingFeedbackService *services.RoutingFeedbackService
+	spamFeedbackService    *services.SpamFeedbackService
 	routingModelService    *services.RoutingModelService
 	auditService           *services.AuditService
 	uploadDir              string
@@ -43,6 +45,7 @@ func NewProcessHandler(
 	orchestrator *services.OrchestratorService,
 	routingConfigService *services.RoutingConfigService,
 	routingFeedbackService *services.RoutingFeedbackService,
+	spamFeedbackService *services.SpamFeedbackService,
 	routingModelService *services.RoutingModelService,
 	auditService *services.AuditService,
 ) *ProcessHandler {
@@ -54,6 +57,7 @@ func NewProcessHandler(
 		orchestrator:           orchestrator,
 		routingConfigService:   routingConfigService,
 		routingFeedbackService: routingFeedbackService,
+		spamFeedbackService:    spamFeedbackService,
 		routingModelService:    routingModelService,
 		auditService:           auditService,
 		uploadDir:              uploadDir,
@@ -230,12 +234,134 @@ func (h *ProcessHandler) ProcessCall(c *gin.Context) {
 		"audio_ext":       ext,
 		"audio_size":      file.Size,
 		"segments_count":  segmentsCount,
+		"status":          result.Status,
 		"intent_id":       intentID,
 		"priority":        priority,
 		"suggested_group": suggestedGroup,
 	})
 
 	c.JSON(http.StatusOK, result)
+}
+
+type spamReviewTranscriptPayload struct {
+	CallID      string                 `json:"call_id"`
+	Segments    []clients.Segment      `json:"segments"`
+	RoleMapping map[string]string      `json:"role_mapping"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+type spamReviewRequest struct {
+	CallID         string                      `json:"call_id"`
+	SourceFilename string                      `json:"source_filename"`
+	Decision       string                      `json:"decision"`
+	Transcript     spamReviewTranscriptPayload `json:"transcript"`
+	SpamCheck      struct {
+		Status         string  `json:"status"`
+		PredictedLabel string  `json:"predicted_label"`
+		Confidence     float64 `json:"confidence"`
+		ThresholdLow   float64 `json:"threshold_low"`
+		ThresholdHigh  float64 `json:"threshold_high"`
+		Reason         string  `json:"reason"`
+		Backend        string  `json:"backend"`
+	} `json:"spam_check"`
+}
+
+func (h *ProcessHandler) ResolveSpamReview(c *gin.Context) {
+	if h.spamFeedbackService == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "spam feedback service is not configured"})
+		return
+	}
+
+	var payload spamReviewRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	transcript := &clients.TranscriptionResponse{
+		CallID:      strings.TrimSpace(payload.Transcript.CallID),
+		Segments:    payload.Transcript.Segments,
+		RoleMapping: payload.Transcript.RoleMapping,
+		Metadata:    payload.Transcript.Metadata,
+	}
+	if transcript.CallID == "" {
+		transcript.CallID = strings.TrimSpace(payload.CallID)
+	}
+	if transcript.Metadata == nil {
+		transcript.Metadata = map[string]interface{}{}
+	}
+
+	feedbackSegments := make([]services.FeedbackTranscriptSegment, 0, len(transcript.Segments))
+	for _, seg := range transcript.Segments {
+		feedbackSegments = append(feedbackSegments, services.FeedbackTranscriptSegment{
+			Start:   seg.Start,
+			End:     seg.End,
+			Speaker: seg.Speaker,
+			Role:    seg.Role,
+			Text:    seg.Text,
+		})
+	}
+
+	if _, err := h.spamFeedbackService.SaveDecision(services.SpamGateFeedbackRequest{
+		CallID:             transcript.CallID,
+		SourceFilename:     payload.SourceFilename,
+		Decision:           payload.Decision,
+		TranscriptText:     segmentsToPlainText(transcript.Segments, 8000),
+		TranscriptSegments: feedbackSegments,
+		TrainingSample:     segmentsToPlainText(transcript.Segments, 280),
+		SpamCheck: services.SpamGateFeedbackMeta{
+			Status:         payload.SpamCheck.Status,
+			PredictedLabel: payload.SpamCheck.PredictedLabel,
+			Confidence:     payload.SpamCheck.Confidence,
+			ThresholdLow:   payload.SpamCheck.ThresholdLow,
+			ThresholdHigh:  payload.SpamCheck.ThresholdHigh,
+			Reason:         payload.SpamCheck.Reason,
+			Backend:        payload.SpamCheck.Backend,
+		},
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	result, err := h.orchestrator.ContinueAfterSpamReview(services.ContinueAfterSpamReviewInput{
+		CallID:         payload.CallID,
+		SourceFilename: payload.SourceFilename,
+		Decision:       payload.Decision,
+		Transcript:     transcript,
+	})
+	if err != nil {
+		h.writeAudit(c, "call.spam_review", "call", transcript.CallID, "failed", map[string]interface{}{
+			"decision": payload.Decision,
+			"reason":   err.Error(),
+		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.writeAudit(c, "call.spam_review", "call", transcript.CallID, "success", map[string]interface{}{
+		"decision": payload.Decision,
+		"status":   result.Status,
+	})
+
+	c.JSON(http.StatusOK, result)
+}
+
+func segmentsToPlainText(segments []clients.Segment, maxChars int) string {
+	if len(segments) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		text := strings.TrimSpace(segment.Text)
+		if text != "" {
+			parts = append(parts, text)
+		}
+	}
+	joined := strings.Join(parts, " ")
+	if maxChars > 0 && len(joined) > maxChars {
+		return joined[:maxChars]
+	}
+	return joined
 }
 
 // Health godoc
@@ -268,6 +394,7 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 			"routing_groups":   "POST/DELETE /api/v1/routing-config/groups",
 			"routing_intents":  "POST/DELETE /api/v1/routing-config/intents",
 			"routing_feedback": "POST /api/v1/routing-feedback",
+			"spam_review":      "POST /api/v1/spam-review",
 			"routing_model":    "GET /api/v1/routing-model/status, POST /api/v1/routing-model/reload, POST /api/v1/routing-model/train, POST /api/v1/routing-model/train-csv",
 			"audit_events":     "GET /api/v1/audit/events (admin)",
 			"health":           "GET /health",
@@ -275,8 +402,9 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 		},
 		"pipeline": []string{
 			"1. Transcription + Diarization",
-			"2. Routing (RuBERT Intent Classification)",
-			"3. Ticket Creation",
+			"2. Spam Gate (allow / block / manual review)",
+			"3. Routing (RuBERT Intent Classification)",
+			"4. Ticket Creation",
 		},
 	})
 }

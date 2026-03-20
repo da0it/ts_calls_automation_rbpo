@@ -107,6 +107,11 @@ func main() {
 		cfg.RoutingAutoLearnLimit,
 		routingConfigService,
 	)
+	spamFeedbackService := services.NewSpamFeedbackService(
+		cfg.SpamGateFeedbackPath,
+		cfg.SpamGatePositiveLabel,
+		cfg.SpamGateNegativeLabel,
+	)
 	routingModelService := services.NewRoutingModelService(
 		cfg.RouterAdminURL,
 		cfg.RouterAdminToken,
@@ -115,7 +120,14 @@ func main() {
 	)
 
 	// Инициализация handlers
-	processHandler := handlers.NewProcessHandler(orchestrator, routingConfigService, routingFeedbackService, routingModelService, auditService)
+	processHandler := handlers.NewProcessHandler(
+		orchestrator,
+		routingConfigService,
+		routingFeedbackService,
+		spamFeedbackService,
+		routingModelService,
+		auditService,
+	)
 	authHandler := handlers.NewAuthHandler(userService, cfg.JWTSecret, cfg.JWTExpiryHours, auditService)
 	grpcHandler := handlers.NewProcessGRPCHandler(orchestrator)
 
@@ -237,6 +249,7 @@ func setupRouter(
 	{
 		api.GET("/auth/me", auth.Me)
 		api.POST("/process-call", h.ProcessCall)
+		api.POST("/spam-review", h.ResolveSpamReview)
 		api.GET("/routing-config", h.GetRoutingConfig)
 		api.POST("/routing-feedback", h.SaveRoutingFeedback)
 		api.GET("/routing-model/status", h.GetRoutingModelStatus)

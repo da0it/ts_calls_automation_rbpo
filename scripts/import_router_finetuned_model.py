@@ -6,7 +6,7 @@ import json
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Set, Tuple
 
 import joblib
 import torch
@@ -51,6 +51,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-name", default="", help="Optional base model name for metadata.")
     parser.add_argument("--version-id", default="", help="Optional version id for the artifact.")
     parser.add_argument("--trained-at", default="", help="Optional trained_at timestamp in UTC ISO format.")
+    parser.add_argument(
+        "--exclude-runtime-intent",
+        action="append",
+        default=[],
+        help="Runtime intent id to ignore during compatibility check. Can be repeated, e.g. spam.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Validate and print import plan without writing files.")
     return parser.parse_args()
 
@@ -77,8 +83,11 @@ def normalize_intent_ids(values: Iterable[Any]) -> List[str]:
     return out
 
 
-def comparable_intent_ids(values: Iterable[Any]) -> List[str]:
-    return [value for value in normalize_intent_ids(values) if value != RESERVED_FALLBACK_INTENT_ID]
+def comparable_intent_ids(values: Iterable[Any], excluded: Set[str] | None = None) -> List[str]:
+    blocked = {RESERVED_FALLBACK_INTENT_ID}
+    if excluded:
+        blocked.update(str(value).strip() for value in excluded if str(value).strip())
+    return [value for value in normalize_intent_ids(values) if value not in blocked]
 
 
 def extract_intent_ids_from_label_encoder(obj: Any) -> List[str]:
@@ -215,6 +224,7 @@ def main() -> int:
         label_encoder_path = Path(args.label_encoder_path).expanduser().resolve()
     if str(args.temperature_file).strip():
         temperature_path = Path(args.temperature_file).expanduser().resolve()
+    excluded_runtime_intents = {str(value).strip() for value in list(args.exclude_runtime_intent or []) if str(value).strip()}
 
     if not source_dir.exists() or not source_dir.is_dir():
         raise RuntimeError(f"source model dir not found: {source_dir}")
@@ -230,8 +240,8 @@ def main() -> int:
     model_intents, mapping_source = load_model_intent_ids(source_dir, label_encoder_path)
     calibration = load_temperature_calibration(source_dir, temperature_path)
 
-    runtime_set = set(comparable_intent_ids(runtime_intents))
-    model_set = set(comparable_intent_ids(model_intents))
+    runtime_set = set(comparable_intent_ids(runtime_intents, excluded=excluded_runtime_intents))
+    model_set = set(comparable_intent_ids(model_intents, excluded=excluded_runtime_intents))
     missing_in_model = sorted(runtime_set - model_set)
     extra_in_model = sorted(model_set - runtime_set)
     if missing_in_model or extra_in_model:
@@ -288,6 +298,7 @@ def main() -> int:
     print(f"artifact_model_path={artifact_model_path}")
     print(f"intents_path={intents_path}")
     print(f"intent_count={len(model_intents)}")
+    print(f"excluded_runtime_intents={sorted(excluded_runtime_intents)}")
     print(f"label_mapping_source={mapping_source}")
     print(f"temperature={calibration.get('temperature', 1.0)}")
     print(f"version_id={version_id}")

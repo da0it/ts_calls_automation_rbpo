@@ -34,15 +34,14 @@ require_cmd() {
 
 ensure_python_grpc_tools() {
   if "$PYTHON_BIN" -c "import grpc_tools.protoc" >/dev/null 2>&1; then
-    return
+    return 0
   fi
-  if "$PYTHON_BIN" -c "import sys; raise SystemExit(0 if sys.prefix != sys.base_prefix else 1)" >/dev/null 2>&1; then
-    log "Installing Python grpc tools into active virtualenv..."
-    $PIP_BIN install grpcio-tools protobuf
-  else
-    log "Installing Python grpc tools into user site-packages..."
-    $PIP_BIN install --user grpcio-tools protobuf
+  if command -v grpc_python_plugin >/dev/null 2>&1; then
+    log "grpcio-tools is unavailable; falling back to protoc + grpc_python_plugin"
+    return 1
   fi
+  log "grpcio-tools and grpc_python_plugin are unavailable; Python gRPC stubs will not be regenerated"
+  return 2
 }
 
 ensure_go_plugin() {
@@ -74,12 +73,34 @@ generate_python_stubs() {
   mkdir -p "$out_dir"
   : >"$out_dir/__init__.py"
   log "Generating Python stubs -> $out_dir"
+  if "$PYTHON_BIN" -c "import grpc_tools.protoc" >/dev/null 2>&1; then
+    (
+      cd "$PROTO_DIR"
+      "$PYTHON_BIN" -m grpc_tools.protoc \
+        -I . \
+        --python_out="$out_dir" \
+        --grpc_python_out="$out_dir" \
+        "$PROTO_FILE"
+    )
+    return
+  fi
+  if command -v grpc_python_plugin >/dev/null 2>&1; then
+    (
+      cd "$PROTO_DIR"
+      protoc \
+        -I . \
+        --python_out="$out_dir" \
+        --grpc_python_out="$out_dir" \
+        --plugin=protoc-gen-grpc_python="$(command -v grpc_python_plugin)" \
+        "$PROTO_FILE"
+    )
+    return
+  fi
   (
     cd "$PROTO_DIR"
-    "$PYTHON_BIN" -m grpc_tools.protoc \
+    protoc \
       -I . \
       --python_out="$out_dir" \
-      --grpc_python_out="$out_dir" \
       "$PROTO_FILE"
   )
 }
@@ -91,7 +112,7 @@ main() {
 
   export PATH="$GO_PLUGIN_BIN:$PATH"
 
-  ensure_python_grpc_tools
+  ensure_python_grpc_tools || true
   ensure_go_plugin "protoc-gen-go" "google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11"
   ensure_go_plugin "protoc-gen-go-grpc" "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1"
 

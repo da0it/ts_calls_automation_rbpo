@@ -70,6 +70,8 @@ func (h *ProcessGRPCHandler) ProcessCall(ctx context.Context, req *callprocessin
 		Ticket:         ticketToProto(result.Ticket),
 		ProcessingTime: result.ProcessingTime,
 		TotalTime:      result.TotalTime,
+		Status:         result.Status,
+		SpamCheck:      spamCheckToProto(result.SpamCheck),
 	}, nil
 }
 
@@ -112,6 +114,23 @@ func routingToProto(routing *clients.RoutingResponse) *callprocessingv1.Routing 
 		IntentConfidence: routing.IntentConfidence,
 		Priority:         routing.Priority,
 		SuggestedGroup:   routing.SuggestedGroup,
+		SpamCheck:        spamCheckToProto(routing.SpamCheck),
+	}
+}
+
+func spamCheckToProto(spamCheck *clients.SpamCheckResponse) *callprocessingv1.SpamCheck {
+	if spamCheck == nil {
+		return nil
+	}
+	return &callprocessingv1.SpamCheck{
+		Status:         spamCheck.Status,
+		PredictedLabel: spamCheck.PredictedLabel,
+		Confidence:     spamCheck.Confidence,
+		ThresholdLow:   spamCheck.ThresholdLow,
+		ThresholdHigh:  spamCheck.ThresholdHigh,
+		Reason:         spamCheck.Reason,
+		Skipped:        spamCheck.Skipped,
+		Backend:        spamCheck.Backend,
 	}
 }
 

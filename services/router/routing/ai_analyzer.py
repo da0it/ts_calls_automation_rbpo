@@ -5,12 +5,14 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, List, Optional, Tuple
 import json
+import math
 import logging
 import os
 import random
 import re
 import time
 
+import joblib
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -21,10 +23,18 @@ from .nlp_preprocess import PreprocessConfig, build_canonical
 
 logger = logging.getLogger(__name__)
 RESERVED_FALLBACK_INTENT_ID = "misc.triage"
+RESERVED_SPAM_INTENT_ID = "spam"
 
 
 class AIAnalyzer:
-    def analyze(self, call: CallInput, allowed_intents: Dict[str, Dict], groups: Optional[Dict[str, Dict]] = None) -> AIAnalysis:
+    def analyze(
+        self,
+        call: CallInput,
+        allowed_intents: Dict[str, Dict],
+        groups: Optional[Dict[str, Dict]] = None,
+        *,
+        skip_spam_gate: bool = False,
+    ) -> AIAnalysis:
         raise NotImplementedError
 
 
@@ -51,6 +61,12 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         finetuned_batch_size: int = 16,
         finetuned_max_length: int = 256,
         finetuned_weight_decay: float = 0.01,
+        spam_gate_enabled: bool = False,
+        spam_gate_model_path: Optional[str] = None,
+        spam_gate_artifact_path: Optional[str] = None,
+        spam_gate_threshold: float = 0.8,
+        spam_gate_allow_threshold: float = 0.35,
+        spam_gate_positive_label: str = RESERVED_SPAM_INTENT_ID,
         **_: Any,
     ):
         self.model_name = str(model_name).strip() or "ai-forever/ruBert-base"
@@ -74,6 +90,12 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         self.finetuned_batch_size = int(max(4, min(64, finetuned_batch_size)))
         self.finetuned_max_length = int(max(64, min(512, finetuned_max_length)))
         self.finetuned_weight_decay = float(max(0.0, min(0.2, finetuned_weight_decay)))
+        self.spam_gate_enabled = bool(spam_gate_enabled)
+        self.spam_gate_model_path = str(spam_gate_model_path or "").strip()
+        self.spam_gate_artifact_path = str(spam_gate_artifact_path or "").strip()
+        self.spam_gate_threshold = float(max(0.0, min(1.0, spam_gate_threshold)))
+        self.spam_gate_allow_threshold = float(max(0.0, min(self.spam_gate_threshold, spam_gate_allow_threshold)))
+        self.spam_gate_positive_label = str(spam_gate_positive_label or RESERVED_SPAM_INTENT_ID).strip() or RESERVED_SPAM_INTENT_ID
 
         self.tuned_model_path = str(tuned_model_path or "").strip()
         self._state_lock = RLock()
@@ -82,17 +104,52 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         self._finetuned_tokenizer: Optional[Any] = None
         self._active_finetuned_intents: Optional[Tuple[str, ...]] = None
         self._active_finetuned_path: str = ""
+        self._spam_artifact: Optional[Dict[str, Any]] = None
+        self._spam_model: Optional[Any] = None
+        self._spam_tokenizer: Optional[Any] = None
+        self._spam_vectorizer: Optional[Any] = None
+        self._active_spam_path: str = ""
+        self._active_spam_backend: str = ""
         self._last_train_report: Optional[Dict[str, Any]] = None
         self._last_train_error: str = ""
 
         self._load_tuned_artifact_from_disk()
+        self._load_spam_gate_artifact_from_disk()
 
-    def analyze(self, call: CallInput, allowed_intents: Dict[str, Dict], groups: Optional[Dict[str, Dict]] = None) -> AIAnalysis:
+    def analyze(
+        self,
+        call: CallInput,
+        allowed_intents: Dict[str, Dict],
+        groups: Optional[Dict[str, Dict]] = None,
+        *,
+        skip_spam_gate: bool = False,
+    ) -> AIAnalysis:
         started = time.time()
         prep = build_canonical([(s.start, s.text, s.role) for s in call.segments], self.preprocess_cfg)
         text = self._extract_text_with_context(prep.canonical_text, self.max_text_chars)
-        runtime_intent_ids = sorted(allowed_intents.keys())
+        spam_meta = self._predict_with_spam_gate(text, skip=skip_spam_gate)
+        spam_decision = self._build_spam_gate_decision(spam_meta)
+        if spam_decision["status"] == "block":
+            return self._spam_result(
+                call_id=call.call_id,
+                spam_meta=spam_meta,
+                spam_decision=spam_decision,
+                allowed_intents=allowed_intents,
+                processing_time_ms=(time.time() - started) * 1000.0,
+                text_len=len(text),
+                prep_meta=prep.meta,
+            )
+        if spam_decision["status"] == "review":
+            return self._spam_review_result(
+                call_id=call.call_id,
+                spam_meta=spam_meta,
+                spam_decision=spam_decision,
+                processing_time_ms=(time.time() - started) * 1000.0,
+                text_len=len(text),
+                prep_meta=prep.meta,
+            )
 
+        runtime_intent_ids = self._stage2_runtime_intent_ids(allowed_intents)
         probs, meta = self._predict_with_finetuned_model(text, runtime_intent_ids)
         if probs is None:
             return self._triage_result(
@@ -101,7 +158,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 processing_time_ms=(time.time() - started) * 1000.0,
                 text_len=len(text),
                 prep_meta=prep.meta,
-                model_meta=meta,
+                model_meta={"spam_gate": spam_meta, "spam_decision": spam_decision, "stage2": meta},
             )
 
         intent_ids = list(meta.get("intent_ids") or runtime_intent_ids)
@@ -116,7 +173,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 processing_time_ms=(time.time() - started) * 1000.0,
                 text_len=len(text),
                 prep_meta=prep.meta,
-                model_meta=meta,
+                model_meta={"spam_gate": spam_meta, "spam_decision": spam_decision, "stage2": meta},
             )
 
         meta_intent = allowed_intents.get(best_intent_id, {})
@@ -145,6 +202,8 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 "text_length": len(text),
                 "prep_meta": prep.meta,
                 "top3_intents": top3_intents,
+                "spam_gate": spam_meta,
+                "spam_decision": spam_decision,
                 "finetuned_model": meta,
             },
         )
@@ -167,6 +226,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 "active": False,
                 "reason": "no_tuned_model",
                 "model_path": self.tuned_model_path,
+                "spam_gate": self._spam_gate_status(),
                 "finetuned_model": {
                     "enabled": self.finetuned_enabled,
                     "active": False,
@@ -177,7 +237,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             }
 
         artifact_intents = list(artifact.get("intent_ids") or [])
-        current_intents = sorted(allowed_intents.keys()) if allowed_intents else None
+        current_intents = self._stage2_runtime_intent_ids(allowed_intents or {}) if allowed_intents else None
         compatible = current_intents is None or self._same_intent_set(artifact_intents, current_intents)
         order_matches = current_intents is not None and self._comparable_intent_ids(artifact_intents) == self._comparable_intent_ids(current_intents)
 
@@ -198,6 +258,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             "intent_order_matches_current": order_matches,
             "metrics": artifact.get("metrics", {}),
             "dataset": artifact.get("dataset", {}),
+            "spam_gate": self._spam_gate_status(),
             "finetuned_model": {
                 "enabled": self.finetuned_enabled,
                 "active": active,
@@ -230,7 +291,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         if not samples:
             raise RuntimeError("no training samples after preprocessing")
 
-        intent_ids = sorted(allowed_intents.keys())
+        intent_ids = self._stage2_runtime_intent_ids(allowed_intents)
         label_to_idx = {iid: i for i, iid in enumerate(intent_ids)}
         filtered: List[Dict[str, Any]] = []
         for sample in samples:
@@ -300,6 +361,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
 
     def reload_tuned_head_from_disk(self) -> Dict[str, Any]:
         self._load_tuned_artifact_from_disk()
+        self._load_spam_gate_artifact_from_disk()
         return self.get_training_status()
 
     def _triage_result(
@@ -331,6 +393,227 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 "finetuned_model": model_meta,
             },
         )
+
+    def _spam_result(
+        self,
+        *,
+        call_id: str,
+        spam_meta: Dict[str, Any],
+        spam_decision: Dict[str, Any],
+        allowed_intents: Dict[str, Dict[str, Any]],
+        processing_time_ms: float,
+        text_len: int,
+        prep_meta: Dict[str, Any],
+    ) -> AIAnalysis:
+        spam_intent = allowed_intents.get(RESERVED_SPAM_INTENT_ID, {})
+        confidence = float(spam_meta.get("positive_confidence") or 0.0)
+        priority = self._normalize_priority(spam_intent.get("priority", "high"))
+        default_group = str(spam_intent.get("default_group") or "technical_support").strip() or "technical_support"
+        return AIAnalysis(
+            intent=IntentResult(
+                intent_id=RESERVED_SPAM_INTENT_ID,
+                confidence=confidence,
+                evidence=[],
+                notes=f"spam_gate confidence={confidence:.3f}",
+            ),
+            priority=priority,
+            suggested_targets=[{"type": "group", "id": default_group, "confidence": confidence}],
+            raw={
+                "mode": "spam_gate",
+                "model_version": self.model_name,
+                "device": self.device,
+                "processing_time_ms": round(processing_time_ms, 2),
+                "text_length": text_len,
+                "prep_meta": prep_meta,
+                "spam_gate": spam_meta,
+                "spam_decision": spam_decision,
+            },
+        )
+
+    def _spam_review_result(
+        self,
+        *,
+        call_id: str,
+        spam_meta: Dict[str, Any],
+        spam_decision: Dict[str, Any],
+        processing_time_ms: float,
+        text_len: int,
+        prep_meta: Dict[str, Any],
+    ) -> AIAnalysis:
+        confidence = float(spam_meta.get("positive_confidence") or 0.0)
+        return AIAnalysis(
+            intent=IntentResult(
+                intent_id=RESERVED_FALLBACK_INTENT_ID,
+                confidence=confidence,
+                evidence=[],
+                notes=f"spam_gate review required confidence={confidence:.3f}",
+            ),
+            priority="medium",
+            suggested_targets=[],
+            raw={
+                "mode": "spam_gate_review",
+                "model_version": self.model_name,
+                "device": self.device,
+                "processing_time_ms": round(processing_time_ms, 2),
+                "text_length": text_len,
+                "prep_meta": prep_meta,
+                "spam_gate": spam_meta,
+                "spam_decision": spam_decision,
+            },
+        )
+
+    def _predict_with_spam_gate(self, text: str, *, skip: bool = False) -> Dict[str, Any]:
+        with self._state_lock:
+            artifact = dict(self._spam_artifact or {})
+        backend = self._spam_gate_backend(artifact)
+
+        if skip:
+            return {
+                "enabled": self.spam_gate_enabled,
+                "active": False,
+                "skipped": True,
+                "reason": "skip_spam_gate_requested",
+                "backend": backend,
+            }
+        if not self.spam_gate_enabled:
+            return {"enabled": False, "active": False, "reason": "spam_gate_disabled", "backend": backend}
+        if not artifact:
+            return {"enabled": True, "active": False, "reason": "no_spam_gate_model", "backend": backend}
+
+        gate_meta = artifact.get("spam_gate")
+        if not isinstance(gate_meta, dict) or not gate_meta.get("enabled"):
+            return {"enabled": True, "active": False, "reason": "spam_gate_not_enabled", "backend": backend}
+
+        labels = self._spam_gate_labels(artifact)
+        positive_label = str(gate_meta.get("positive_label") or self.spam_gate_positive_label).strip() or self.spam_gate_positive_label
+        if positive_label not in labels:
+            return {"enabled": True, "active": False, "reason": "positive_label_missing", "backend": backend}
+
+        try:
+            if backend == "sklearn_tfidf":
+                probs, model_path = self._predict_with_sklearn_spam_gate(
+                    text=text,
+                    artifact=artifact,
+                    gate_meta=gate_meta,
+                    labels=labels,
+                )
+                temperature = 1.0
+            else:
+                probs, temperature, model_path = self._predict_with_transformer_spam_gate(
+                    text=text,
+                    artifact=artifact,
+                    gate_meta=gate_meta,
+                    labels=labels,
+                )
+            best_idx = int(torch.argmax(probs).item())
+            positive_idx = labels.index(positive_label)
+            positive_confidence = float(probs[positive_idx].item())
+            return {
+                "enabled": True,
+                "active": True,
+                "labels": labels,
+                "positive_label": positive_label,
+                "predicted_label": labels[best_idx],
+                "positive_confidence": positive_confidence,
+                "threshold": float(gate_meta.get("threshold") or self.spam_gate_threshold),
+                "allow_threshold": float(gate_meta.get("allow_threshold") or self.spam_gate_allow_threshold),
+                "temperature": temperature,
+                "model_path": model_path or gate_meta.get("model_path", ""),
+                "trained_at": gate_meta.get("trained_at", ""),
+                "backend": backend,
+            }
+        except Exception as exc:
+            logger.warning("Failed to run spam gate model: %s", exc)
+            return {"enabled": True, "active": False, "reason": f"runtime_error:{exc}", "backend": backend}
+
+    def _build_spam_gate_decision(self, spam_meta: Dict[str, Any]) -> Dict[str, Any]:
+        threshold_high = float(spam_meta.get("threshold") or self.spam_gate_threshold)
+        threshold_low = float(spam_meta.get("allow_threshold") or self.spam_gate_allow_threshold)
+        threshold_low = max(0.0, min(threshold_low, threshold_high))
+        confidence = float(spam_meta.get("positive_confidence") or 0.0)
+        predicted_label = str(spam_meta.get("predicted_label") or "").strip()
+        positive_label = str(spam_meta.get("positive_label") or self.spam_gate_positive_label).strip() or self.spam_gate_positive_label
+
+        status = "allow"
+        reason = str(spam_meta.get("reason") or "ok")
+        if spam_meta.get("skipped"):
+            reason = "skip_spam_gate_requested"
+        elif spam_meta.get("active"):
+            if predicted_label == positive_label and confidence >= threshold_high:
+                status = "block"
+                reason = f"positive_confidence>={threshold_high:.3f}"
+            elif confidence <= threshold_low:
+                status = "allow"
+                reason = f"positive_confidence<={threshold_low:.3f}"
+            else:
+                status = "review"
+                reason = f"manual_review_required:{threshold_low:.3f}<{confidence:.3f}<{threshold_high:.3f}"
+
+        return {
+            "status": status,
+            "predicted_label": predicted_label,
+            "confidence": confidence,
+            "threshold_low": threshold_low,
+            "threshold_high": threshold_high,
+            "reason": reason,
+            "skipped": bool(spam_meta.get("skipped")),
+            "backend": str(spam_meta.get("backend") or self._spam_gate_backend({})),
+        }
+
+    def _predict_with_transformer_spam_gate(
+        self,
+        *,
+        text: str,
+        artifact: Dict[str, Any],
+        gate_meta: Dict[str, Any],
+        labels: List[str],
+    ) -> Tuple[torch.Tensor, float, str]:
+        model, tokenizer, max_len = self._ensure_transformer_spam_gate_loaded(artifact, labels)
+        enc = tokenizer(
+            [text],
+            truncation=True,
+            padding=True,
+            max_length=max_len,
+            return_tensors="pt",
+        )
+        enc = {k: v.to(self.device) for k, v in enc.items()}
+        temperature = self._artifact_model_temperature(gate_meta)
+        with torch.inference_mode():
+            logits = model(**enc).logits
+            probs = torch.softmax(logits / temperature, dim=1).squeeze(0)
+        return probs, temperature, str(gate_meta.get("model_path") or "")
+
+    def _predict_with_sklearn_spam_gate(
+        self,
+        *,
+        text: str,
+        artifact: Dict[str, Any],
+        gate_meta: Dict[str, Any],
+        labels: List[str],
+    ) -> Tuple[torch.Tensor, str]:
+        model, vectorizer, model_path = self._ensure_sklearn_spam_gate_loaded(artifact)
+        features = vectorizer.transform([text])
+        if hasattr(model, "predict_proba"):
+            prob_list = model.predict_proba(features)[0]
+        else:
+            decision = model.decision_function(features)
+            if hasattr(decision, "tolist"):
+                decision = decision.tolist()
+            if isinstance(decision, list) and decision and isinstance(decision[0], list):
+                decision = decision[0]
+            if not isinstance(decision, list):
+                decision = [float(decision)]
+            if len(decision) == 1:
+                score = float(decision[0])
+                prob_pos = 1.0 / (1.0 + math.exp(-score))
+                prob_list = [1.0 - prob_pos, prob_pos]
+            else:
+                tensor = torch.tensor(decision, dtype=torch.float32)
+                prob_list = torch.softmax(tensor, dim=0).tolist()
+        probs = torch.tensor([float(x) for x in prob_list], dtype=torch.float32)
+        if probs.numel() != len(labels):
+            raise RuntimeError(f"spam gate classes mismatch: model={probs.numel()} labels={len(labels)}")
+        return probs, model_path
 
     def _predict_with_finetuned_model(
         self,
@@ -420,6 +703,96 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             self._active_finetuned_path = model_path
             max_len = int(finetuned_artifact.get("max_length") or self.finetuned_max_length)
             return model, tokenizer, max_len
+
+    def _ensure_transformer_spam_gate_loaded(
+        self,
+        artifact: Dict[str, Any],
+        labels: List[str],
+    ) -> Tuple[AutoModelForSequenceClassification, Any, int]:
+        gate_meta = artifact.get("spam_gate")
+        if not isinstance(gate_meta, dict):
+            raise RuntimeError("spam gate metadata is missing")
+        model_path = str(gate_meta.get("model_path") or "").strip()
+        if not model_path:
+            raise RuntimeError("spam gate model path is empty")
+
+        with self._state_lock:
+            if (
+                self._spam_model is not None
+                and self._spam_tokenizer is not None
+                and self._active_spam_path == model_path
+            ):
+                max_len = int(gate_meta.get("max_length") or self.finetuned_max_length)
+                return self._spam_model, self._spam_tokenizer, max_len
+
+            model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
+            model.eval()
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            if int(model.config.num_labels) != len(labels):
+                raise RuntimeError(
+                    f"spam gate classes mismatch: model={int(model.config.num_labels)} labels={len(labels)}"
+                )
+
+            self._spam_model = model
+            self._spam_tokenizer = tokenizer
+            self._spam_vectorizer = None
+            self._active_spam_path = model_path
+            self._active_spam_backend = "hf_sequence_classifier"
+            max_len = int(gate_meta.get("max_length") or self.finetuned_max_length)
+            return model, tokenizer, max_len
+
+    def _ensure_sklearn_spam_gate_loaded(
+        self,
+        artifact: Dict[str, Any],
+    ) -> Tuple[Any, Any, str]:
+        gate_meta = artifact.get("spam_gate")
+        if not isinstance(gate_meta, dict):
+            raise RuntimeError("spam gate metadata is missing")
+        model_path_raw = str(gate_meta.get("model_path") or "").strip()
+        if not model_path_raw:
+            raise RuntimeError("spam gate model path is empty")
+
+        model_dir = Path(model_path_raw)
+        if model_dir.is_file():
+            model_dir = model_dir.parent
+        if not model_dir.exists():
+            raise RuntimeError(f"spam gate model path not found: {model_dir}")
+
+        model_candidates = [
+            gate_meta.get("classifier_file"),
+            gate_meta.get("model_file"),
+            "model.joblib",
+            "classifier.joblib",
+            "svm.joblib",
+            "svm_model.joblib",
+        ]
+        vectorizer_candidates = [
+            gate_meta.get("vectorizer_file"),
+            "vectorizer.joblib",
+            "tfidf.joblib",
+            "tfidf_vectorizer.joblib",
+        ]
+        model_file = self._resolve_model_file(model_dir, model_candidates, "classifier/model")
+        vectorizer_file = self._resolve_model_file(model_dir, vectorizer_candidates, "vectorizer")
+
+        with self._state_lock:
+            if (
+                self._spam_model is not None
+                and self._spam_vectorizer is not None
+                and self._active_spam_path == str(model_dir)
+                and self._active_spam_backend == "sklearn_tfidf"
+            ):
+                return self._spam_model, self._spam_vectorizer, str(model_dir)
+
+            model = joblib.load(model_file)
+            vectorizer = joblib.load(vectorizer_file)
+
+            self._spam_model = model
+            self._spam_tokenizer = None
+            self._spam_vectorizer = vectorizer
+            self._active_spam_path = str(model_dir)
+            self._active_spam_backend = "sklearn_tfidf"
+            return model, vectorizer, str(model_dir)
 
     def _collect_training_samples(
         self,
@@ -697,6 +1070,25 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             self._clear_tuned_artifact()
             logger.warning("Failed to load tuned router artifact from %s: %s", path, exc)
 
+    def _load_spam_gate_artifact_from_disk(self) -> None:
+        if not self.spam_gate_artifact_path:
+            self._clear_spam_gate_artifact()
+            return
+        path = Path(self.spam_gate_artifact_path)
+        if not path.exists():
+            self._clear_spam_gate_artifact()
+            logger.info("No spam gate artifact found at %s", path)
+            return
+        try:
+            payload = torch.load(path, map_location="cpu")
+            if not isinstance(payload, dict):
+                raise RuntimeError("invalid spam gate artifact payload")
+            self._activate_spam_gate_artifact(payload)
+            logger.info("Loaded spam gate artifact from %s", path)
+        except Exception as exc:
+            self._clear_spam_gate_artifact()
+            logger.warning("Failed to load spam gate artifact from %s: %s", path, exc)
+
     def _save_tuned_artifact(self, output_path: str, artifact: Dict[str, Any]) -> None:
         path = Path(output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -712,6 +1104,15 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             self._active_finetuned_intents = None
             self._active_finetuned_path = ""
 
+    def _activate_spam_gate_artifact(self, artifact: Dict[str, Any]) -> None:
+        with self._state_lock:
+            self._spam_artifact = dict(artifact)
+            self._spam_model = None
+            self._spam_tokenizer = None
+            self._spam_vectorizer = None
+            self._active_spam_path = ""
+            self._active_spam_backend = self._spam_gate_backend(artifact)
+
     def _clear_tuned_artifact(self) -> None:
         with self._state_lock:
             self._tuned_artifact = None
@@ -719,6 +1120,15 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             self._finetuned_tokenizer = None
             self._active_finetuned_intents = None
             self._active_finetuned_path = ""
+
+    def _clear_spam_gate_artifact(self) -> None:
+        with self._state_lock:
+            self._spam_artifact = None
+            self._spam_model = None
+            self._spam_tokenizer = None
+            self._spam_vectorizer = None
+            self._active_spam_path = ""
+            self._active_spam_backend = ""
 
     def _set_last_train_report(self, report: Dict[str, Any]) -> None:
         with self._state_lock:
@@ -765,6 +1175,80 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 return nested
         return []
 
+    def _spam_gate_labels(self, artifact: Dict[str, Any]) -> List[str]:
+        labels = [str(x).strip() for x in list(artifact.get("labels") or []) if str(x).strip()]
+        if labels:
+            return labels
+        gate = artifact.get("spam_gate")
+        if isinstance(gate, dict):
+            nested = [str(x).strip() for x in list(gate.get("labels") or []) if str(x).strip()]
+            if nested:
+                return nested
+        return []
+
+    def _spam_gate_status(self) -> Dict[str, Any]:
+        with self._state_lock:
+            artifact = dict(self._spam_artifact or {})
+            active_backend = self._active_spam_backend
+        backend = self._spam_gate_backend(artifact)
+        if not self.spam_gate_enabled:
+            return {
+                "enabled": False,
+                "active": False,
+                "threshold": self.spam_gate_threshold,
+                "allow_threshold": self.spam_gate_allow_threshold,
+                "reason": "spam_gate_disabled",
+                "backend": backend,
+            }
+        if not artifact:
+            return {
+                "enabled": True,
+                "active": False,
+                "threshold": self.spam_gate_threshold,
+                "allow_threshold": self.spam_gate_allow_threshold,
+                "reason": "no_spam_gate_model",
+                "model_path": self.spam_gate_model_path,
+                "backend": backend,
+            }
+        gate = artifact.get("spam_gate") if isinstance(artifact.get("spam_gate"), dict) else {}
+        labels = self._spam_gate_labels(artifact)
+        active = bool(gate.get("enabled")) and len(labels) >= 2
+        return {
+            "enabled": True,
+            "active": active,
+            "reason": "ok" if active else "invalid_spam_gate_model",
+            "threshold": float(gate.get("threshold") or self.spam_gate_threshold),
+            "allow_threshold": float(gate.get("allow_threshold") or self.spam_gate_allow_threshold),
+            "positive_label": str(gate.get("positive_label") or self.spam_gate_positive_label),
+            "labels": labels,
+            "model_path": str(gate.get("model_path") or self.spam_gate_model_path),
+            "trained_at": str(gate.get("trained_at") or ""),
+            "calibration": self._artifact_model_calibration(gate),
+            "backend": backend,
+            "active_backend": active_backend or backend,
+        }
+
+    def _spam_gate_backend(self, artifact: Dict[str, Any]) -> str:
+        gate = artifact.get("spam_gate") if isinstance(artifact.get("spam_gate"), dict) else {}
+        backend = str(gate.get("backend") or artifact.get("backend") or "").strip().lower()
+        if backend in {"sklearn", "svm_tfidf", "svm+tfidf"}:
+            return "sklearn_tfidf"
+        if backend:
+            return backend
+        return "hf_sequence_classifier"
+
+    def _resolve_model_file(self, base_dir: Path, candidates: List[Any], label: str) -> Path:
+        for candidate in candidates:
+            name = str(candidate or "").strip()
+            if not name:
+                continue
+            path = Path(name)
+            if not path.is_absolute():
+                path = base_dir / path
+            if path.exists() and path.is_file():
+                return path
+        raise RuntimeError(f"missing spam gate {label} artifact in {base_dir}")
+
     def _artifact_calibration(self, artifact: Dict[str, Any]) -> Dict[str, Any]:
         finetuned_model = artifact.get("finetuned_model")
         if isinstance(finetuned_model, dict) and isinstance(finetuned_model.get("calibration"), dict):
@@ -773,8 +1257,23 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             return dict(artifact.get("calibration") or {})
         return {}
 
+    def _artifact_model_calibration(self, model_meta: Dict[str, Any]) -> Dict[str, Any]:
+        if isinstance(model_meta, dict) and isinstance(model_meta.get("calibration"), dict):
+            return dict(model_meta.get("calibration") or {})
+        return {}
+
     def _artifact_temperature(self, artifact: Dict[str, Any]) -> float:
         calibration = self._artifact_calibration(artifact)
+        try:
+            temperature = float(calibration.get("temperature", 1.0))
+        except Exception:
+            temperature = 1.0
+        if temperature <= 0.0:
+            return 1.0
+        return temperature
+
+    def _artifact_model_temperature(self, model_meta: Dict[str, Any]) -> float:
+        calibration = self._artifact_model_calibration(model_meta)
         try:
             temperature = float(calibration.get("temperature", 1.0))
         except Exception:
@@ -794,6 +1293,16 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             for x in values
             if str(x).strip() and str(x).strip() != RESERVED_FALLBACK_INTENT_ID
         ]
+
+    def _stage2_runtime_intent_ids(self, allowed_intents: Dict[str, Dict[str, Any]]) -> List[str]:
+        excluded = {RESERVED_FALLBACK_INTENT_ID}
+        if self.spam_gate_enabled:
+            excluded.add(RESERVED_SPAM_INTENT_ID)
+        return sorted(
+            str(intent_id).strip()
+            for intent_id in allowed_intents.keys()
+            if str(intent_id).strip() and str(intent_id).strip() not in excluded
+        )
 
     def _build_class_weights(self, labels: torch.Tensor, num_classes: int) -> torch.Tensor:
         counts = torch.bincount(labels, minlength=num_classes).float().clamp(min=1.0)

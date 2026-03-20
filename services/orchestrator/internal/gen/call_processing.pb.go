@@ -173,6 +173,7 @@ type Routing struct {
 	IntentConfidence float64                `protobuf:"fixed64,2,opt,name=intent_confidence,json=intentConfidence,proto3" json:"intent_confidence,omitempty"`
 	Priority         string                 `protobuf:"bytes,3,opt,name=priority,proto3" json:"priority,omitempty"`
 	SuggestedGroup   string                 `protobuf:"bytes,4,opt,name=suggested_group,json=suggestedGroup,proto3" json:"suggested_group,omitempty"`
+	SpamCheck        *SpamCheck             `protobuf:"bytes,5,opt,name=spam_check,json=spamCheck,proto3" json:"spam_check,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -235,6 +236,113 @@ func (x *Routing) GetSuggestedGroup() string {
 	return ""
 }
 
+func (x *Routing) GetSpamCheck() *SpamCheck {
+	if x != nil {
+		return x.SpamCheck
+	}
+	return nil
+}
+
+type SpamCheck struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Status         string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	PredictedLabel string                 `protobuf:"bytes,2,opt,name=predicted_label,json=predictedLabel,proto3" json:"predicted_label,omitempty"`
+	Confidence     float64                `protobuf:"fixed64,3,opt,name=confidence,proto3" json:"confidence,omitempty"`
+	ThresholdLow   float64                `protobuf:"fixed64,4,opt,name=threshold_low,json=thresholdLow,proto3" json:"threshold_low,omitempty"`
+	ThresholdHigh  float64                `protobuf:"fixed64,5,opt,name=threshold_high,json=thresholdHigh,proto3" json:"threshold_high,omitempty"`
+	Reason         string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	Skipped        bool                   `protobuf:"varint,7,opt,name=skipped,proto3" json:"skipped,omitempty"`
+	Backend        string                 `protobuf:"bytes,8,opt,name=backend,proto3" json:"backend,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SpamCheck) Reset() {
+	*x = SpamCheck{}
+	mi := &file_call_processing_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SpamCheck) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SpamCheck) ProtoMessage() {}
+
+func (x *SpamCheck) ProtoReflect() protoreflect.Message {
+	mi := &file_call_processing_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SpamCheck.ProtoReflect.Descriptor instead.
+func (*SpamCheck) Descriptor() ([]byte, []int) {
+	return file_call_processing_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SpamCheck) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *SpamCheck) GetPredictedLabel() string {
+	if x != nil {
+		return x.PredictedLabel
+	}
+	return ""
+}
+
+func (x *SpamCheck) GetConfidence() float64 {
+	if x != nil {
+		return x.Confidence
+	}
+	return 0
+}
+
+func (x *SpamCheck) GetThresholdLow() float64 {
+	if x != nil {
+		return x.ThresholdLow
+	}
+	return 0
+}
+
+func (x *SpamCheck) GetThresholdHigh() float64 {
+	if x != nil {
+		return x.ThresholdHigh
+	}
+	return 0
+}
+
+func (x *SpamCheck) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *SpamCheck) GetSkipped() bool {
+	if x != nil {
+		return x.Skipped
+	}
+	return false
+}
+
+func (x *SpamCheck) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
 type ExtractedEntity struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
@@ -247,7 +355,7 @@ type ExtractedEntity struct {
 
 func (x *ExtractedEntity) Reset() {
 	*x = ExtractedEntity{}
-	mi := &file_call_processing_proto_msgTypes[3]
+	mi := &file_call_processing_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -259,7 +367,7 @@ func (x *ExtractedEntity) String() string {
 func (*ExtractedEntity) ProtoMessage() {}
 
 func (x *ExtractedEntity) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[3]
+	mi := &file_call_processing_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -272,7 +380,7 @@ func (x *ExtractedEntity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtractedEntity.ProtoReflect.Descriptor instead.
 func (*ExtractedEntity) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{3}
+	return file_call_processing_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ExtractedEntity) GetType() string {
@@ -318,7 +426,7 @@ type Entities struct {
 
 func (x *Entities) Reset() {
 	*x = Entities{}
-	mi := &file_call_processing_proto_msgTypes[4]
+	mi := &file_call_processing_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -330,7 +438,7 @@ func (x *Entities) String() string {
 func (*Entities) ProtoMessage() {}
 
 func (x *Entities) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[4]
+	mi := &file_call_processing_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -343,7 +451,7 @@ func (x *Entities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Entities.ProtoReflect.Descriptor instead.
 func (*Entities) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{4}
+	return file_call_processing_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Entities) GetPersons() []*ExtractedEntity {
@@ -408,7 +516,7 @@ type TicketCreated struct {
 
 func (x *TicketCreated) Reset() {
 	*x = TicketCreated{}
-	mi := &file_call_processing_proto_msgTypes[5]
+	mi := &file_call_processing_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -420,7 +528,7 @@ func (x *TicketCreated) String() string {
 func (*TicketCreated) ProtoMessage() {}
 
 func (x *TicketCreated) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[5]
+	mi := &file_call_processing_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -433,7 +541,7 @@ func (x *TicketCreated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketCreated.ProtoReflect.Descriptor instead.
 func (*TicketCreated) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{5}
+	return file_call_processing_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TicketCreated) GetTicketId() string {
@@ -482,7 +590,7 @@ type TranscribeRequest struct {
 
 func (x *TranscribeRequest) Reset() {
 	*x = TranscribeRequest{}
-	mi := &file_call_processing_proto_msgTypes[6]
+	mi := &file_call_processing_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +602,7 @@ func (x *TranscribeRequest) String() string {
 func (*TranscribeRequest) ProtoMessage() {}
 
 func (x *TranscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[6]
+	mi := &file_call_processing_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +615,7 @@ func (x *TranscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TranscribeRequest.ProtoReflect.Descriptor instead.
 func (*TranscribeRequest) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{6}
+	return file_call_processing_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TranscribeRequest) GetAudio() []byte {
@@ -540,7 +648,7 @@ type TranscribeResponse struct {
 
 func (x *TranscribeResponse) Reset() {
 	*x = TranscribeResponse{}
-	mi := &file_call_processing_proto_msgTypes[7]
+	mi := &file_call_processing_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +660,7 @@ func (x *TranscribeResponse) String() string {
 func (*TranscribeResponse) ProtoMessage() {}
 
 func (x *TranscribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[7]
+	mi := &file_call_processing_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,7 +673,7 @@ func (x *TranscribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TranscribeResponse.ProtoReflect.Descriptor instead.
 func (*TranscribeResponse) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{7}
+	return file_call_processing_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TranscribeResponse) GetTranscript() *Transcript {
@@ -579,13 +687,14 @@ type RouteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CallId        string                 `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
 	Segments      []*Segment             `protobuf:"bytes,2,rep,name=segments,proto3" json:"segments,omitempty"`
+	SkipSpamGate  bool                   `protobuf:"varint,3,opt,name=skip_spam_gate,json=skipSpamGate,proto3" json:"skip_spam_gate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RouteRequest) Reset() {
 	*x = RouteRequest{}
-	mi := &file_call_processing_proto_msgTypes[8]
+	mi := &file_call_processing_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +706,7 @@ func (x *RouteRequest) String() string {
 func (*RouteRequest) ProtoMessage() {}
 
 func (x *RouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[8]
+	mi := &file_call_processing_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +719,7 @@ func (x *RouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RouteRequest.ProtoReflect.Descriptor instead.
 func (*RouteRequest) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{8}
+	return file_call_processing_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RouteRequest) GetCallId() string {
@@ -627,6 +736,13 @@ func (x *RouteRequest) GetSegments() []*Segment {
 	return nil
 }
 
+func (x *RouteRequest) GetSkipSpamGate() bool {
+	if x != nil {
+		return x.SkipSpamGate
+	}
+	return false
+}
+
 type RouteResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Routing       *Routing               `protobuf:"bytes,1,opt,name=routing,proto3" json:"routing,omitempty"`
@@ -636,7 +752,7 @@ type RouteResponse struct {
 
 func (x *RouteResponse) Reset() {
 	*x = RouteResponse{}
-	mi := &file_call_processing_proto_msgTypes[9]
+	mi := &file_call_processing_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -648,7 +764,7 @@ func (x *RouteResponse) String() string {
 func (*RouteResponse) ProtoMessage() {}
 
 func (x *RouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[9]
+	mi := &file_call_processing_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -661,7 +777,7 @@ func (x *RouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RouteResponse.ProtoReflect.Descriptor instead.
 func (*RouteResponse) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{9}
+	return file_call_processing_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RouteResponse) GetRouting() *Routing {
@@ -680,7 +796,7 @@ type ExtractEntitiesRequest struct {
 
 func (x *ExtractEntitiesRequest) Reset() {
 	*x = ExtractEntitiesRequest{}
-	mi := &file_call_processing_proto_msgTypes[10]
+	mi := &file_call_processing_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -692,7 +808,7 @@ func (x *ExtractEntitiesRequest) String() string {
 func (*ExtractEntitiesRequest) ProtoMessage() {}
 
 func (x *ExtractEntitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[10]
+	mi := &file_call_processing_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -705,7 +821,7 @@ func (x *ExtractEntitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtractEntitiesRequest.ProtoReflect.Descriptor instead.
 func (*ExtractEntitiesRequest) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{10}
+	return file_call_processing_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ExtractEntitiesRequest) GetSegments() []*Segment {
@@ -724,7 +840,7 @@ type ExtractEntitiesResponse struct {
 
 func (x *ExtractEntitiesResponse) Reset() {
 	*x = ExtractEntitiesResponse{}
-	mi := &file_call_processing_proto_msgTypes[11]
+	mi := &file_call_processing_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +852,7 @@ func (x *ExtractEntitiesResponse) String() string {
 func (*ExtractEntitiesResponse) ProtoMessage() {}
 
 func (x *ExtractEntitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[11]
+	mi := &file_call_processing_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +865,7 @@ func (x *ExtractEntitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtractEntitiesResponse.ProtoReflect.Descriptor instead.
 func (*ExtractEntitiesResponse) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{11}
+	return file_call_processing_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ExtractEntitiesResponse) GetEntities() *Entities {
@@ -771,7 +887,7 @@ type CreateTicketRequest struct {
 
 func (x *CreateTicketRequest) Reset() {
 	*x = CreateTicketRequest{}
-	mi := &file_call_processing_proto_msgTypes[12]
+	mi := &file_call_processing_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -783,7 +899,7 @@ func (x *CreateTicketRequest) String() string {
 func (*CreateTicketRequest) ProtoMessage() {}
 
 func (x *CreateTicketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[12]
+	mi := &file_call_processing_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -796,7 +912,7 @@ func (x *CreateTicketRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTicketRequest.ProtoReflect.Descriptor instead.
 func (*CreateTicketRequest) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{12}
+	return file_call_processing_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CreateTicketRequest) GetTranscript() *Transcript {
@@ -836,7 +952,7 @@ type CreateTicketResponse struct {
 
 func (x *CreateTicketResponse) Reset() {
 	*x = CreateTicketResponse{}
-	mi := &file_call_processing_proto_msgTypes[13]
+	mi := &file_call_processing_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -848,7 +964,7 @@ func (x *CreateTicketResponse) String() string {
 func (*CreateTicketResponse) ProtoMessage() {}
 
 func (x *CreateTicketResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[13]
+	mi := &file_call_processing_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -861,7 +977,7 @@ func (x *CreateTicketResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTicketResponse.ProtoReflect.Descriptor instead.
 func (*CreateTicketResponse) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{13}
+	return file_call_processing_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CreateTicketResponse) GetTicket() *TicketCreated {
@@ -882,7 +998,7 @@ type ProcessCallRequest struct {
 
 func (x *ProcessCallRequest) Reset() {
 	*x = ProcessCallRequest{}
-	mi := &file_call_processing_proto_msgTypes[14]
+	mi := &file_call_processing_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -894,7 +1010,7 @@ func (x *ProcessCallRequest) String() string {
 func (*ProcessCallRequest) ProtoMessage() {}
 
 func (x *ProcessCallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[14]
+	mi := &file_call_processing_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -907,7 +1023,7 @@ func (x *ProcessCallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcessCallRequest.ProtoReflect.Descriptor instead.
 func (*ProcessCallRequest) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{14}
+	return file_call_processing_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ProcessCallRequest) GetAudio() []byte {
@@ -943,7 +1059,7 @@ type NotificationChannel struct {
 
 func (x *NotificationChannel) Reset() {
 	*x = NotificationChannel{}
-	mi := &file_call_processing_proto_msgTypes[15]
+	mi := &file_call_processing_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -955,7 +1071,7 @@ func (x *NotificationChannel) String() string {
 func (*NotificationChannel) ProtoMessage() {}
 
 func (x *NotificationChannel) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[15]
+	mi := &file_call_processing_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -968,7 +1084,7 @@ func (x *NotificationChannel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotificationChannel.ProtoReflect.Descriptor instead.
 func (*NotificationChannel) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{15}
+	return file_call_processing_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *NotificationChannel) GetType() string {
@@ -1012,7 +1128,7 @@ type SendNotificationRequest struct {
 
 func (x *SendNotificationRequest) Reset() {
 	*x = SendNotificationRequest{}
-	mi := &file_call_processing_proto_msgTypes[16]
+	mi := &file_call_processing_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1024,7 +1140,7 @@ func (x *SendNotificationRequest) String() string {
 func (*SendNotificationRequest) ProtoMessage() {}
 
 func (x *SendNotificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[16]
+	mi := &file_call_processing_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1037,7 +1153,7 @@ func (x *SendNotificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendNotificationRequest.ProtoReflect.Descriptor instead.
 func (*SendNotificationRequest) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{16}
+	return file_call_processing_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SendNotificationRequest) GetCallId() string {
@@ -1085,7 +1201,7 @@ type SendNotificationResponse struct {
 
 func (x *SendNotificationResponse) Reset() {
 	*x = SendNotificationResponse{}
-	mi := &file_call_processing_proto_msgTypes[17]
+	mi := &file_call_processing_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1097,7 +1213,7 @@ func (x *SendNotificationResponse) String() string {
 func (*SendNotificationResponse) ProtoMessage() {}
 
 func (x *SendNotificationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[17]
+	mi := &file_call_processing_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1110,7 +1226,7 @@ func (x *SendNotificationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendNotificationResponse.ProtoReflect.Descriptor instead.
 func (*SendNotificationResponse) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{17}
+	return file_call_processing_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SendNotificationResponse) GetSuccess() bool {
@@ -1137,13 +1253,15 @@ type ProcessCallResponse struct {
 	ProcessingTime map[string]float64        `protobuf:"bytes,6,rep,name=processing_time,json=processingTime,proto3" json:"processing_time,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
 	TotalTime      float64                   `protobuf:"fixed64,7,opt,name=total_time,json=totalTime,proto3" json:"total_time,omitempty"`
 	Notification   *SendNotificationResponse `protobuf:"bytes,8,opt,name=notification,proto3" json:"notification,omitempty"`
+	Status         string                    `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	SpamCheck      *SpamCheck                `protobuf:"bytes,10,opt,name=spam_check,json=spamCheck,proto3" json:"spam_check,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ProcessCallResponse) Reset() {
 	*x = ProcessCallResponse{}
-	mi := &file_call_processing_proto_msgTypes[18]
+	mi := &file_call_processing_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1155,7 +1273,7 @@ func (x *ProcessCallResponse) String() string {
 func (*ProcessCallResponse) ProtoMessage() {}
 
 func (x *ProcessCallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_call_processing_proto_msgTypes[18]
+	mi := &file_call_processing_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1168,7 +1286,7 @@ func (x *ProcessCallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcessCallResponse.ProtoReflect.Descriptor instead.
 func (*ProcessCallResponse) Descriptor() ([]byte, []int) {
-	return file_call_processing_proto_rawDescGZIP(), []int{18}
+	return file_call_processing_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ProcessCallResponse) GetCallId() string {
@@ -1227,6 +1345,20 @@ func (x *ProcessCallResponse) GetNotification() *SendNotificationResponse {
 	return nil
 }
 
+func (x *ProcessCallResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ProcessCallResponse) GetSpamCheck() *SpamCheck {
+	if x != nil {
+		return x.SpamCheck
+	}
+	return nil
+}
+
 var File_call_processing_proto protoreflect.FileDescriptor
 
 const file_call_processing_proto_rawDesc = "" +
@@ -1246,12 +1378,25 @@ const file_call_processing_proto_rawDesc = "" +
 	"\bmetadata\x18\x04 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x1a>\n" +
 	"\x10RoleMappingEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x98\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd5\x01\n" +
 	"\aRouting\x12\x1b\n" +
 	"\tintent_id\x18\x01 \x01(\tR\bintentId\x12+\n" +
 	"\x11intent_confidence\x18\x02 \x01(\x01R\x10intentConfidence\x12\x1a\n" +
 	"\bpriority\x18\x03 \x01(\tR\bpriority\x12'\n" +
-	"\x0fsuggested_group\x18\x04 \x01(\tR\x0esuggestedGroup\"u\n" +
+	"\x0fsuggested_group\x18\x04 \x01(\tR\x0esuggestedGroup\x12;\n" +
+	"\n" +
+	"spam_check\x18\x05 \x01(\v2\x1c.callprocessing.v1.SpamCheckR\tspamCheck\"\x84\x02\n" +
+	"\tSpamCheck\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12'\n" +
+	"\x0fpredicted_label\x18\x02 \x01(\tR\x0epredictedLabel\x12\x1e\n" +
+	"\n" +
+	"confidence\x18\x03 \x01(\x01R\n" +
+	"confidence\x12#\n" +
+	"\rthreshold_low\x18\x04 \x01(\x01R\fthresholdLow\x12%\n" +
+	"\x0ethreshold_high\x18\x05 \x01(\x01R\rthresholdHigh\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\x12\x18\n" +
+	"\askipped\x18\a \x01(\bR\askipped\x12\x18\n" +
+	"\abackend\x18\b \x01(\tR\abackend\"u\n" +
 	"\x0fExtractedEntity\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12\x1e\n" +
@@ -1283,10 +1428,11 @@ const file_call_processing_proto_rawDesc = "" +
 	"\x12TranscribeResponse\x12=\n" +
 	"\n" +
 	"transcript\x18\x01 \x01(\v2\x1d.callprocessing.v1.TranscriptR\n" +
-	"transcript\"_\n" +
+	"transcript\"\x85\x01\n" +
 	"\fRouteRequest\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x126\n" +
-	"\bsegments\x18\x02 \x03(\v2\x1a.callprocessing.v1.SegmentR\bsegments\"E\n" +
+	"\bsegments\x18\x02 \x03(\v2\x1a.callprocessing.v1.SegmentR\bsegments\x12$\n" +
+	"\x0eskip_spam_gate\x18\x03 \x01(\bR\fskipSpamGate\"E\n" +
 	"\rRouteResponse\x124\n" +
 	"\arouting\x18\x01 \x01(\v2\x1a.callprocessing.v1.RoutingR\arouting\"P\n" +
 	"\x16ExtractEntitiesRequest\x126\n" +
@@ -1321,7 +1467,7 @@ const file_call_processing_proto_rawDesc = "" +
 	"\x06ticket\x18\x05 \x01(\v2 .callprocessing.v1.TicketCreatedR\x06ticket\"v\n" +
 	"\x18SendNotificationResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12@\n" +
-	"\aresults\x18\x02 \x03(\v2&.callprocessing.v1.NotificationChannelR\aresults\"\xae\x04\n" +
+	"\aresults\x18\x02 \x03(\v2&.callprocessing.v1.NotificationChannelR\aresults\"\x83\x05\n" +
 	"\x13ProcessCallResponse\x12\x17\n" +
 	"\acall_id\x18\x01 \x01(\tR\x06callId\x12=\n" +
 	"\n" +
@@ -1333,7 +1479,11 @@ const file_call_processing_proto_rawDesc = "" +
 	"\x0fprocessing_time\x18\x06 \x03(\v2:.callprocessing.v1.ProcessCallResponse.ProcessingTimeEntryR\x0eprocessingTime\x12\x1d\n" +
 	"\n" +
 	"total_time\x18\a \x01(\x01R\ttotalTime\x12O\n" +
-	"\fnotification\x18\b \x01(\v2+.callprocessing.v1.SendNotificationResponseR\fnotification\x1aA\n" +
+	"\fnotification\x18\b \x01(\v2+.callprocessing.v1.SendNotificationResponseR\fnotification\x12\x16\n" +
+	"\x06status\x18\t \x01(\tR\x06status\x12;\n" +
+	"\n" +
+	"spam_check\x18\n" +
+	" \x01(\v2\x1c.callprocessing.v1.SpamCheckR\tspamCheck\x1aA\n" +
 	"\x13ProcessingTimeEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x012q\n" +
@@ -1363,81 +1513,84 @@ func file_call_processing_proto_rawDescGZIP() []byte {
 	return file_call_processing_proto_rawDescData
 }
 
-var file_call_processing_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_call_processing_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_call_processing_proto_goTypes = []any{
 	(*Segment)(nil),                  // 0: callprocessing.v1.Segment
 	(*Transcript)(nil),               // 1: callprocessing.v1.Transcript
 	(*Routing)(nil),                  // 2: callprocessing.v1.Routing
-	(*ExtractedEntity)(nil),          // 3: callprocessing.v1.ExtractedEntity
-	(*Entities)(nil),                 // 4: callprocessing.v1.Entities
-	(*TicketCreated)(nil),            // 5: callprocessing.v1.TicketCreated
-	(*TranscribeRequest)(nil),        // 6: callprocessing.v1.TranscribeRequest
-	(*TranscribeResponse)(nil),       // 7: callprocessing.v1.TranscribeResponse
-	(*RouteRequest)(nil),             // 8: callprocessing.v1.RouteRequest
-	(*RouteResponse)(nil),            // 9: callprocessing.v1.RouteResponse
-	(*ExtractEntitiesRequest)(nil),   // 10: callprocessing.v1.ExtractEntitiesRequest
-	(*ExtractEntitiesResponse)(nil),  // 11: callprocessing.v1.ExtractEntitiesResponse
-	(*CreateTicketRequest)(nil),      // 12: callprocessing.v1.CreateTicketRequest
-	(*CreateTicketResponse)(nil),     // 13: callprocessing.v1.CreateTicketResponse
-	(*ProcessCallRequest)(nil),       // 14: callprocessing.v1.ProcessCallRequest
-	(*NotificationChannel)(nil),      // 15: callprocessing.v1.NotificationChannel
-	(*SendNotificationRequest)(nil),  // 16: callprocessing.v1.SendNotificationRequest
-	(*SendNotificationResponse)(nil), // 17: callprocessing.v1.SendNotificationResponse
-	(*ProcessCallResponse)(nil),      // 18: callprocessing.v1.ProcessCallResponse
-	nil,                              // 19: callprocessing.v1.Transcript.RoleMappingEntry
-	nil,                              // 20: callprocessing.v1.ProcessCallResponse.ProcessingTimeEntry
-	(*structpb.Struct)(nil),          // 21: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),    // 22: google.protobuf.Timestamp
+	(*SpamCheck)(nil),                // 3: callprocessing.v1.SpamCheck
+	(*ExtractedEntity)(nil),          // 4: callprocessing.v1.ExtractedEntity
+	(*Entities)(nil),                 // 5: callprocessing.v1.Entities
+	(*TicketCreated)(nil),            // 6: callprocessing.v1.TicketCreated
+	(*TranscribeRequest)(nil),        // 7: callprocessing.v1.TranscribeRequest
+	(*TranscribeResponse)(nil),       // 8: callprocessing.v1.TranscribeResponse
+	(*RouteRequest)(nil),             // 9: callprocessing.v1.RouteRequest
+	(*RouteResponse)(nil),            // 10: callprocessing.v1.RouteResponse
+	(*ExtractEntitiesRequest)(nil),   // 11: callprocessing.v1.ExtractEntitiesRequest
+	(*ExtractEntitiesResponse)(nil),  // 12: callprocessing.v1.ExtractEntitiesResponse
+	(*CreateTicketRequest)(nil),      // 13: callprocessing.v1.CreateTicketRequest
+	(*CreateTicketResponse)(nil),     // 14: callprocessing.v1.CreateTicketResponse
+	(*ProcessCallRequest)(nil),       // 15: callprocessing.v1.ProcessCallRequest
+	(*NotificationChannel)(nil),      // 16: callprocessing.v1.NotificationChannel
+	(*SendNotificationRequest)(nil),  // 17: callprocessing.v1.SendNotificationRequest
+	(*SendNotificationResponse)(nil), // 18: callprocessing.v1.SendNotificationResponse
+	(*ProcessCallResponse)(nil),      // 19: callprocessing.v1.ProcessCallResponse
+	nil,                              // 20: callprocessing.v1.Transcript.RoleMappingEntry
+	nil,                              // 21: callprocessing.v1.ProcessCallResponse.ProcessingTimeEntry
+	(*structpb.Struct)(nil),          // 22: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),    // 23: google.protobuf.Timestamp
 }
 var file_call_processing_proto_depIdxs = []int32{
 	0,  // 0: callprocessing.v1.Transcript.segments:type_name -> callprocessing.v1.Segment
-	19, // 1: callprocessing.v1.Transcript.role_mapping:type_name -> callprocessing.v1.Transcript.RoleMappingEntry
-	21, // 2: callprocessing.v1.Transcript.metadata:type_name -> google.protobuf.Struct
-	3,  // 3: callprocessing.v1.Entities.persons:type_name -> callprocessing.v1.ExtractedEntity
-	3,  // 4: callprocessing.v1.Entities.phones:type_name -> callprocessing.v1.ExtractedEntity
-	3,  // 5: callprocessing.v1.Entities.emails:type_name -> callprocessing.v1.ExtractedEntity
-	3,  // 6: callprocessing.v1.Entities.order_ids:type_name -> callprocessing.v1.ExtractedEntity
-	3,  // 7: callprocessing.v1.Entities.account_ids:type_name -> callprocessing.v1.ExtractedEntity
-	3,  // 8: callprocessing.v1.Entities.money_amounts:type_name -> callprocessing.v1.ExtractedEntity
-	3,  // 9: callprocessing.v1.Entities.dates:type_name -> callprocessing.v1.ExtractedEntity
-	22, // 10: callprocessing.v1.TicketCreated.created_at:type_name -> google.protobuf.Timestamp
-	1,  // 11: callprocessing.v1.TranscribeResponse.transcript:type_name -> callprocessing.v1.Transcript
-	0,  // 12: callprocessing.v1.RouteRequest.segments:type_name -> callprocessing.v1.Segment
-	2,  // 13: callprocessing.v1.RouteResponse.routing:type_name -> callprocessing.v1.Routing
-	0,  // 14: callprocessing.v1.ExtractEntitiesRequest.segments:type_name -> callprocessing.v1.Segment
-	4,  // 15: callprocessing.v1.ExtractEntitiesResponse.entities:type_name -> callprocessing.v1.Entities
-	1,  // 16: callprocessing.v1.CreateTicketRequest.transcript:type_name -> callprocessing.v1.Transcript
-	2,  // 17: callprocessing.v1.CreateTicketRequest.routing:type_name -> callprocessing.v1.Routing
-	4,  // 18: callprocessing.v1.CreateTicketRequest.entities:type_name -> callprocessing.v1.Entities
-	5,  // 19: callprocessing.v1.CreateTicketResponse.ticket:type_name -> callprocessing.v1.TicketCreated
-	1,  // 20: callprocessing.v1.SendNotificationRequest.transcript:type_name -> callprocessing.v1.Transcript
-	2,  // 21: callprocessing.v1.SendNotificationRequest.routing:type_name -> callprocessing.v1.Routing
-	4,  // 22: callprocessing.v1.SendNotificationRequest.entities:type_name -> callprocessing.v1.Entities
-	5,  // 23: callprocessing.v1.SendNotificationRequest.ticket:type_name -> callprocessing.v1.TicketCreated
-	15, // 24: callprocessing.v1.SendNotificationResponse.results:type_name -> callprocessing.v1.NotificationChannel
-	1,  // 25: callprocessing.v1.ProcessCallResponse.transcript:type_name -> callprocessing.v1.Transcript
-	2,  // 26: callprocessing.v1.ProcessCallResponse.routing:type_name -> callprocessing.v1.Routing
-	4,  // 27: callprocessing.v1.ProcessCallResponse.entities:type_name -> callprocessing.v1.Entities
-	5,  // 28: callprocessing.v1.ProcessCallResponse.ticket:type_name -> callprocessing.v1.TicketCreated
-	20, // 29: callprocessing.v1.ProcessCallResponse.processing_time:type_name -> callprocessing.v1.ProcessCallResponse.ProcessingTimeEntry
-	17, // 30: callprocessing.v1.ProcessCallResponse.notification:type_name -> callprocessing.v1.SendNotificationResponse
-	6,  // 31: callprocessing.v1.TranscriptionService.Transcribe:input_type -> callprocessing.v1.TranscribeRequest
-	8,  // 32: callprocessing.v1.RoutingService.Route:input_type -> callprocessing.v1.RouteRequest
-	10, // 33: callprocessing.v1.EntityExtractionService.ExtractEntities:input_type -> callprocessing.v1.ExtractEntitiesRequest
-	12, // 34: callprocessing.v1.TicketService.CreateTicket:input_type -> callprocessing.v1.CreateTicketRequest
-	14, // 35: callprocessing.v1.OrchestratorService.ProcessCall:input_type -> callprocessing.v1.ProcessCallRequest
-	16, // 36: callprocessing.v1.NotificationService.SendNotification:input_type -> callprocessing.v1.SendNotificationRequest
-	7,  // 37: callprocessing.v1.TranscriptionService.Transcribe:output_type -> callprocessing.v1.TranscribeResponse
-	9,  // 38: callprocessing.v1.RoutingService.Route:output_type -> callprocessing.v1.RouteResponse
-	11, // 39: callprocessing.v1.EntityExtractionService.ExtractEntities:output_type -> callprocessing.v1.ExtractEntitiesResponse
-	13, // 40: callprocessing.v1.TicketService.CreateTicket:output_type -> callprocessing.v1.CreateTicketResponse
-	18, // 41: callprocessing.v1.OrchestratorService.ProcessCall:output_type -> callprocessing.v1.ProcessCallResponse
-	17, // 42: callprocessing.v1.NotificationService.SendNotification:output_type -> callprocessing.v1.SendNotificationResponse
-	37, // [37:43] is the sub-list for method output_type
-	31, // [31:37] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	20, // 1: callprocessing.v1.Transcript.role_mapping:type_name -> callprocessing.v1.Transcript.RoleMappingEntry
+	22, // 2: callprocessing.v1.Transcript.metadata:type_name -> google.protobuf.Struct
+	3,  // 3: callprocessing.v1.Routing.spam_check:type_name -> callprocessing.v1.SpamCheck
+	4,  // 4: callprocessing.v1.Entities.persons:type_name -> callprocessing.v1.ExtractedEntity
+	4,  // 5: callprocessing.v1.Entities.phones:type_name -> callprocessing.v1.ExtractedEntity
+	4,  // 6: callprocessing.v1.Entities.emails:type_name -> callprocessing.v1.ExtractedEntity
+	4,  // 7: callprocessing.v1.Entities.order_ids:type_name -> callprocessing.v1.ExtractedEntity
+	4,  // 8: callprocessing.v1.Entities.account_ids:type_name -> callprocessing.v1.ExtractedEntity
+	4,  // 9: callprocessing.v1.Entities.money_amounts:type_name -> callprocessing.v1.ExtractedEntity
+	4,  // 10: callprocessing.v1.Entities.dates:type_name -> callprocessing.v1.ExtractedEntity
+	23, // 11: callprocessing.v1.TicketCreated.created_at:type_name -> google.protobuf.Timestamp
+	1,  // 12: callprocessing.v1.TranscribeResponse.transcript:type_name -> callprocessing.v1.Transcript
+	0,  // 13: callprocessing.v1.RouteRequest.segments:type_name -> callprocessing.v1.Segment
+	2,  // 14: callprocessing.v1.RouteResponse.routing:type_name -> callprocessing.v1.Routing
+	0,  // 15: callprocessing.v1.ExtractEntitiesRequest.segments:type_name -> callprocessing.v1.Segment
+	5,  // 16: callprocessing.v1.ExtractEntitiesResponse.entities:type_name -> callprocessing.v1.Entities
+	1,  // 17: callprocessing.v1.CreateTicketRequest.transcript:type_name -> callprocessing.v1.Transcript
+	2,  // 18: callprocessing.v1.CreateTicketRequest.routing:type_name -> callprocessing.v1.Routing
+	5,  // 19: callprocessing.v1.CreateTicketRequest.entities:type_name -> callprocessing.v1.Entities
+	6,  // 20: callprocessing.v1.CreateTicketResponse.ticket:type_name -> callprocessing.v1.TicketCreated
+	1,  // 21: callprocessing.v1.SendNotificationRequest.transcript:type_name -> callprocessing.v1.Transcript
+	2,  // 22: callprocessing.v1.SendNotificationRequest.routing:type_name -> callprocessing.v1.Routing
+	5,  // 23: callprocessing.v1.SendNotificationRequest.entities:type_name -> callprocessing.v1.Entities
+	6,  // 24: callprocessing.v1.SendNotificationRequest.ticket:type_name -> callprocessing.v1.TicketCreated
+	16, // 25: callprocessing.v1.SendNotificationResponse.results:type_name -> callprocessing.v1.NotificationChannel
+	1,  // 26: callprocessing.v1.ProcessCallResponse.transcript:type_name -> callprocessing.v1.Transcript
+	2,  // 27: callprocessing.v1.ProcessCallResponse.routing:type_name -> callprocessing.v1.Routing
+	5,  // 28: callprocessing.v1.ProcessCallResponse.entities:type_name -> callprocessing.v1.Entities
+	6,  // 29: callprocessing.v1.ProcessCallResponse.ticket:type_name -> callprocessing.v1.TicketCreated
+	21, // 30: callprocessing.v1.ProcessCallResponse.processing_time:type_name -> callprocessing.v1.ProcessCallResponse.ProcessingTimeEntry
+	18, // 31: callprocessing.v1.ProcessCallResponse.notification:type_name -> callprocessing.v1.SendNotificationResponse
+	3,  // 32: callprocessing.v1.ProcessCallResponse.spam_check:type_name -> callprocessing.v1.SpamCheck
+	7,  // 33: callprocessing.v1.TranscriptionService.Transcribe:input_type -> callprocessing.v1.TranscribeRequest
+	9,  // 34: callprocessing.v1.RoutingService.Route:input_type -> callprocessing.v1.RouteRequest
+	11, // 35: callprocessing.v1.EntityExtractionService.ExtractEntities:input_type -> callprocessing.v1.ExtractEntitiesRequest
+	13, // 36: callprocessing.v1.TicketService.CreateTicket:input_type -> callprocessing.v1.CreateTicketRequest
+	15, // 37: callprocessing.v1.OrchestratorService.ProcessCall:input_type -> callprocessing.v1.ProcessCallRequest
+	17, // 38: callprocessing.v1.NotificationService.SendNotification:input_type -> callprocessing.v1.SendNotificationRequest
+	8,  // 39: callprocessing.v1.TranscriptionService.Transcribe:output_type -> callprocessing.v1.TranscribeResponse
+	10, // 40: callprocessing.v1.RoutingService.Route:output_type -> callprocessing.v1.RouteResponse
+	12, // 41: callprocessing.v1.EntityExtractionService.ExtractEntities:output_type -> callprocessing.v1.ExtractEntitiesResponse
+	14, // 42: callprocessing.v1.TicketService.CreateTicket:output_type -> callprocessing.v1.CreateTicketResponse
+	19, // 43: callprocessing.v1.OrchestratorService.ProcessCall:output_type -> callprocessing.v1.ProcessCallResponse
+	18, // 44: callprocessing.v1.NotificationService.SendNotification:output_type -> callprocessing.v1.SendNotificationResponse
+	39, // [39:45] is the sub-list for method output_type
+	33, // [33:39] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_call_processing_proto_init() }
@@ -1451,7 +1604,7 @@ func file_call_processing_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_call_processing_proto_rawDesc), len(file_call_processing_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   6,
 		},

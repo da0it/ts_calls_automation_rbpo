@@ -637,6 +637,7 @@
       loginBanner: null,
       authBusy: false,
       authMode: 'login',
+      spamReviewBusy: false,
       users: [],
       auth: {
         token: '',
@@ -968,6 +969,8 @@
 
     function toCallRecord(file, payload) {
       const routing = payload && payload.routing ? payload.routing : {};
+      const spamCheck = normalizeSpamCheck((routing && routing.spam_check) || (payload && payload.spam_check));
+      const status = String(payload && payload.status || 'completed').trim() || 'completed';
       const callId = (payload && payload.call_id) || '';
       const now = new Date().toISOString();
       const suggestedIntentId = routing.intent_id || 'misc.triage';
@@ -980,8 +983,10 @@
         sourceFilename: file.name,
         createdAt: now,
         callId,
+        status,
         transcript: payload && payload.transcript ? payload.transcript : { segments: [] },
         raw: payload,
+        spamCheck,
         review: {
           decision: 'pending',
           intentId: suggestedIntentId,
@@ -997,6 +1002,32 @@
           group: routing.suggested_group || defaultGroup
         }
       };
+    }
+
+    function normalizeSpamCheck(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      return {
+        status: String(raw.status || '').trim(),
+        predicted_label: String(raw.predicted_label || '').trim(),
+        confidence: Number(raw.confidence || 0),
+        threshold_low: Number(raw.threshold_low || 0),
+        threshold_high: Number(raw.threshold_high || 0),
+        reason: String(raw.reason || '').trim(),
+        skipped: Boolean(raw.skipped),
+        backend: String(raw.backend || '').trim()
+      };
+    }
+
+    function isAwaitingSpamReview(call) {
+      return Boolean(call && call.status === 'awaiting_spam_review');
+    }
+
+    function isSpamBlockedCall(call) {
+      return Boolean(call && call.status === 'spam_blocked');
+    }
+
+    function canReviewRouting(call) {
+      return Boolean(call) && !isAwaitingSpamReview(call) && !isSpamBlockedCall(call);
     }
 
     function render() {
@@ -1078,11 +1109,16 @@
 
       el.callsList.innerHTML = state.calls.map((call) => {
         const active = call.id === state.selectedCallId ? 'active' : '';
-        const decisionChip = call.review.decision === 'accepted'
-          ? '<span class="chip chip-ok">accepted</span>'
-          : call.review.decision === 'rejected'
-            ? '<span class="chip chip-bad">rejected</span>'
-            : '<span class="chip chip-warn">pending</span>';
+        let decisionChip = '<span class="chip chip-warn">pending</span>';
+        if (isAwaitingSpamReview(call)) {
+          decisionChip = '<span class="chip chip-warn">spam review</span>';
+        } else if (isSpamBlockedCall(call)) {
+          decisionChip = '<span class="chip chip-bad">spam blocked</span>';
+        } else if (call.review.decision === 'accepted') {
+          decisionChip = '<span class="chip chip-ok">accepted</span>';
+        } else if (call.review.decision === 'rejected') {
+          decisionChip = '<span class="chip chip-bad">rejected</span>';
+        }
 
         const groupChip = '<span class="chip">' + escapeHtml(call.review.group || 'unassigned') + '</span>';
 
@@ -1123,6 +1159,7 @@
 
       const segments = (call.transcript && call.transcript.segments) || [];
       const suggestion = call.aiSuggestion || {};
+      const spamCheck = call.spamCheck || null;
       const groupOptions = getGroupOptions();
       const intentOptions = getIntentOptions();
 
@@ -1133,10 +1170,66 @@
             <div class="kv"><div class="k">Source file</div><div class="v">${escapeHtml(call.sourceFilename || '-')}</div></div>
             <div class="kv"><div class="k">Call ID</div><div class="v">${escapeHtml(call.callId || '-')}</div></div>
             <div class="kv"><div class="k">Segments</div><div class="v">${segments.length}</div></div>
-            <div class="kv"><div class="k">Decision</div><div class="v">${escapeHtml(call.review.decision)}</div></div>
+            <div class="kv"><div class="k">Status</div><div class="v">${escapeHtml(call.status || 'completed')}</div></div>
           </div>
         </section>
       `;
+
+      const spamMetaBlock = spamCheck ? `
+        <section class="card">
+          <h3>Spam Gate</h3>
+          <div class="meta">
+            <div class="kv"><div class="k">Status</div><div class="v">${escapeHtml(spamCheck.status || '-')}</div></div>
+            <div class="kv"><div class="k">Confidence</div><div class="v">${formatConfidence(spamCheck.confidence)}</div></div>
+            <div class="kv"><div class="k">Thresholds</div><div class="v">${escapeHtml(Number(spamCheck.threshold_low || 0).toFixed(2))} / ${escapeHtml(Number(spamCheck.threshold_high || 0).toFixed(2))}</div></div>
+            <div class="kv"><div class="k">Backend</div><div class="v">${escapeHtml(spamCheck.backend || '-')}</div></div>
+          </div>
+          <div class="help-note">
+            <strong>Reason:</strong> ${escapeHtml(spamCheck.reason || '-')}<br />
+            <strong>Predicted label:</strong> ${escapeHtml(spamCheck.predicted_label || '-')}
+          </div>
+          ${isAwaitingSpamReview(call) ? `
+            <div class="toolbar">
+              <button id="spam-review-spam-btn" class="btn btn-bad" type="button" ${state.spamReviewBusy ? 'disabled' : ''}>Spam</button>
+              <button id="spam-review-not-spam-btn" class="btn btn-ok" type="button" ${state.spamReviewBusy ? 'disabled' : ''}>Not Spam</button>
+            </div>
+          ` : ''}
+        </section>
+      ` : '';
+
+      if (isAwaitingSpamReview(call) || isSpamBlockedCall(call)) {
+        const transcriptBlock = `
+          <section class="card">
+            <h3>Transcript</h3>
+            <div class="segments">
+              ${segments.length === 0 ? '<div class="empty">No transcript segments for this call.</div>' : segments.map((seg) => {
+                return (
+                  '<div class="segment">' +
+                    '<div class="segment-meta">' +
+                      '<span>' + formatSec(seg.start) + 's - ' + formatSec(seg.end) + 's</span>' +
+                      '<span class="chip">' + escapeHtml(seg.speaker || 'speaker') + '</span>' +
+                      '<span class="chip">' + escapeHtml(seg.role || 'role') + '</span>' +
+                    '</div>' +
+                    '<div class="segment-text">' + escapeHtml(seg.text || '') + '</div>' +
+                  '</div>'
+                );
+              }).join('')}
+            </div>
+          </section>
+        `;
+
+        const rawBlock = `
+          <section class="card">
+            <h3>Raw API JSON</h3>
+            <pre class="raw">${escapeHtml(JSON.stringify(makeReviewedPayload(call), null, 2))}</pre>
+          </section>
+        `;
+
+        el.workspace.innerHTML = metaBlock + spamMetaBlock + transcriptBlock + rawBlock;
+        bindSpamReviewActions();
+        renderBanner();
+        return;
+      }
 
       const routingBlock = `
         <section class="card">
@@ -1238,10 +1331,24 @@
         </section>
       `;
 
-      el.workspace.innerHTML = metaBlock + routingBlock + transcriptBlock + rawBlock;
+      el.workspace.innerHTML = metaBlock + spamMetaBlock + routingBlock + transcriptBlock + rawBlock;
 
       bindReviewInputs();
       renderBanner();
+    }
+
+    function bindSpamReviewActions() {
+      const call = getSelectedCall();
+      if (!call || !isAwaitingSpamReview(call)) return;
+
+      const spamBtn = document.getElementById('spam-review-spam-btn');
+      const notSpamBtn = document.getElementById('spam-review-not-spam-btn');
+      if (spamBtn) {
+        spamBtn.addEventListener('click', () => resolveSpamReview('spam'));
+      }
+      if (notSpamBtn) {
+        notSpamBtn.addEventListener('click', () => resolveSpamReview('not_spam'));
+      }
     }
 
     function renderCatalogBlock() {
@@ -1832,7 +1939,7 @@
 
     function applyDecision(decision) {
       const call = getSelectedCall();
-      if (!call) return;
+      if (!call || !canReviewRouting(call)) return;
 
       if (decision === 'accepted') {
         call.review.intentId = call.aiSuggestion.intentId || call.review.intentId;
@@ -1851,7 +1958,7 @@
 
     async function saveDecision() {
       const call = getSelectedCall();
-      if (!call) return;
+      if (!call || !canReviewRouting(call)) return;
 
       if (!call.review.intentId || !call.review.group) {
         setBanner('Final intent id and final group are required.', 'error');
@@ -1886,6 +1993,48 @@
       } catch (err) {
         render();
         setBanner('Saved locally, but feedback API failed: ' + String(err.message || err), 'error');
+      }
+    }
+
+    async function resolveSpamReview(decision) {
+      const call = getSelectedCall();
+      if (!call || !isAwaitingSpamReview(call)) return;
+
+      state.spamReviewBusy = true;
+      renderActions();
+      setBanner(decision === 'spam' ? 'Marking call as spam...' : 'Passing call after manual spam review...', 'ok');
+
+      try {
+        const payload = await apiJson('/api/v1/spam-review', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            call_id: call.callId || '',
+            source_filename: call.sourceFilename || '',
+            decision,
+            transcript: call.transcript || { segments: [] },
+            spam_check: call.spamCheck || {}
+          })
+        });
+
+        const updated = toCallRecord({ name: call.sourceFilename || 'call' }, payload);
+        updated.id = call.id;
+        updated.createdAt = call.createdAt;
+        updated.sourceFilename = call.sourceFilename;
+        updated.lastFeedback = call.lastFeedback;
+
+        const index = state.calls.findIndex((item) => item.id === call.id);
+        if (index >= 0) {
+          state.calls.splice(index, 1, updated);
+        }
+        persist();
+        render();
+        setBanner(decision === 'spam' ? 'Call marked as spam. Ticket creation skipped.' : 'Spam gate overridden. Call continued through router.', 'ok');
+      } catch (err) {
+        setBanner(String(err.message || err), 'error');
+      } finally {
+        state.spamReviewBusy = false;
+        renderActions();
       }
     }
 
@@ -2000,6 +2149,10 @@
 
     function normalizeStoredCall(call) {
       if (!call || typeof call !== 'object') return call;
+      if (!call.status) {
+        call.status = 'completed';
+      }
+      call.spamCheck = normalizeSpamCheck(call.spamCheck || (call.raw && call.raw.spam_check) || (call.raw && call.raw.routing && call.raw.routing.spam_check));
       if (!call.review || typeof call.review !== 'object') {
         call.review = {
           decision: 'pending',
@@ -2017,6 +2170,14 @@
       if (!call.review.intentId) call.review.intentId = 'misc.triage';
       if (!call.review.group) call.review.group = '';
       if (typeof call.review.comment !== 'string') call.review.comment = '';
+      if (!call.aiSuggestion || typeof call.aiSuggestion !== 'object') {
+        call.aiSuggestion = {
+          intentId: 'misc.triage',
+          confidence: 0,
+          priority: 'medium',
+          group: ''
+        };
+      }
       return call;
     }
 
@@ -2025,14 +2186,16 @@
     }
 
     function renderActions() {
-      const disabled = state.processing || !isAuthenticated();
+      const disabled = state.processing || state.spamReviewBusy || !isAuthenticated();
       el.logoutBtn.disabled = state.processing;
       el.processBtn.disabled = disabled;
 
-      const hasCall = state.activeTab === 'review' && Boolean(getSelectedCall());
-      el.acceptBtn.disabled = !hasCall || disabled;
-      el.rejectBtn.disabled = !hasCall || disabled;
-      el.saveBtn.disabled = !hasCall || disabled;
+      const call = state.activeTab === 'review' ? getSelectedCall() : null;
+      const hasCall = Boolean(call);
+      const canReview = Boolean(call) && canReviewRouting(call);
+      el.acceptBtn.disabled = !canReview || disabled;
+      el.rejectBtn.disabled = !canReview || disabled;
+      el.saveBtn.disabled = !canReview || disabled;
       el.exportBtn.disabled = !hasCall || disabled;
       el.copyBtn.disabled = !hasCall || disabled;
     }

@@ -27,6 +27,18 @@ message Routing {
   double intent_confidence = 2;
   string priority = 3;
   string suggested_group = 4;
+  SpamCheck spam_check = 5;
+}
+
+message SpamCheck {
+  string status = 1;
+  string predicted_label = 2;
+  double confidence = 3;
+  double threshold_low = 4;
+  double threshold_high = 5;
+  string reason = 6;
+  bool skipped = 7;
+  string backend = 8;
 }
 
 message ExtractedEntity {
@@ -67,6 +79,7 @@ message TranscribeResponse {
 message RouteRequest {
   string call_id = 1;
   repeated Segment segments = 2;
+  bool skip_spam_gate = 3;
 }
 
 message RouteResponse {
@@ -129,6 +142,8 @@ message ProcessCallResponse {
   map<string, double> processing_time = 6;
   double total_time = 7;
   SendNotificationResponse notification = 8;
+  string status = 9;
+  SpamCheck spam_check = 10;
 }
 
 service TranscriptionService {
