@@ -1,25 +1,16 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from pathlib import Path
-from threading import RLock
-from typing import Any, Dict, List, Optional, Tuple
-import json
-import math
+from typing import Any, Dict, Optional
 import logging
-import os
-import random
-import re
 import time
 
-import joblib
 import torch
-from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from .models import AIAnalysis, CallInput, Evidence, IntentResult, Priority
+from .finetuned_router import FinetunedRouterRuntime
+from .models import AIAnalysis, CallInput, IntentResult, Priority
 from .nlp_preprocess import PreprocessConfig, build_canonical
+from .spam_gate import SpamGateRuntime
+
 
 logger = logging.getLogger(__name__)
 RESERVED_FALLBACK_INTENT_ID = "misc.triage"
@@ -61,11 +52,16 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         finetuned_batch_size: int = 16,
         finetuned_max_length: int = 256,
         finetuned_weight_decay: float = 0.01,
+        nlp_backend: str = "natasha",
+        nlp_text_mode: str = "canonical",
+        nlp_stanza_resources_dir: str = "",
         spam_gate_enabled: bool = False,
         spam_gate_model_path: Optional[str] = None,
         spam_gate_artifact_path: Optional[str] = None,
         spam_gate_threshold: float = 0.8,
         spam_gate_allow_threshold: float = 0.35,
+        spam_gate_score_threshold: Optional[float] = None,
+        spam_gate_score_allow_threshold: Optional[float] = None,
         spam_gate_positive_label: str = RESERVED_SPAM_INTENT_ID,
         **_: Any,
     ):
@@ -75,12 +71,15 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         self.max_text_chars = int(max(200, min(20000, max_text_chars)))
 
         self.preprocess_cfg = preprocess_cfg or PreprocessConfig(
+            backend=str(nlp_backend or "natasha").strip().lower() or "natasha",
+            model_text_mode=str(nlp_text_mode or "canonical").strip().lower() or "canonical",
             drop_fillers=True,
             dedupe=True,
             keep_timestamps=True,
             do_lemmatize=True,
             drop_stopwords=False,
             max_chars=self.max_text_chars,
+            stanza_resources_dir=str(nlp_stanza_resources_dir or "").strip(),
         )
 
         self.finetuned_enabled = bool(finetuned_enabled)
@@ -97,24 +96,26 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         self.spam_gate_allow_threshold = float(max(0.0, min(self.spam_gate_threshold, spam_gate_allow_threshold)))
         self.spam_gate_positive_label = str(spam_gate_positive_label or RESERVED_SPAM_INTENT_ID).strip() or RESERVED_SPAM_INTENT_ID
 
-        self.tuned_model_path = str(tuned_model_path or "").strip()
-        self._state_lock = RLock()
-        self._tuned_artifact: Optional[Dict[str, Any]] = None
-        self._finetuned_model: Optional[AutoModelForSequenceClassification] = None
-        self._finetuned_tokenizer: Optional[Any] = None
-        self._active_finetuned_intents: Optional[Tuple[str, ...]] = None
-        self._active_finetuned_path: str = ""
-        self._spam_artifact: Optional[Dict[str, Any]] = None
-        self._spam_model: Optional[Any] = None
-        self._spam_tokenizer: Optional[Any] = None
-        self._spam_vectorizer: Optional[Any] = None
-        self._active_spam_path: str = ""
-        self._active_spam_backend: str = ""
-        self._last_train_report: Optional[Dict[str, Any]] = None
-        self._last_train_error: str = ""
-
-        self._load_tuned_artifact_from_disk()
-        self._load_spam_gate_artifact_from_disk()
+        self._spam_gate = SpamGateRuntime(
+            enabled=self.spam_gate_enabled,
+            model_path=self.spam_gate_model_path,
+            artifact_path=self.spam_gate_artifact_path,
+            threshold=self.spam_gate_threshold,
+            allow_threshold=self.spam_gate_allow_threshold,
+            score_threshold=spam_gate_score_threshold,
+            score_allow_threshold=spam_gate_score_allow_threshold,
+            positive_label=self.spam_gate_positive_label,
+        )
+        self._finetuned_router = FinetunedRouterRuntime(
+            model_name=self.model_name,
+            device=self.device,
+            tuned_model_path=str(tuned_model_path or "").strip(),
+            finetuned_enabled=self.finetuned_enabled,
+            finetuned_model_path=self.finetuned_model_path,
+            finetuned_max_length=self.finetuned_max_length,
+            finetuned_weight_decay=self.finetuned_weight_decay,
+            max_text_chars=self.max_text_chars,
+        )
 
     def analyze(
         self,
@@ -126,12 +127,12 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
     ) -> AIAnalysis:
         started = time.time()
         prep = build_canonical([(s.start, s.text, s.role) for s in call.segments], self.preprocess_cfg)
-        text = self._extract_text_with_context(prep.canonical_text, self.max_text_chars)
-        spam_meta = self._predict_with_spam_gate(text, skip=skip_spam_gate)
-        spam_decision = self._build_spam_gate_decision(spam_meta)
+        text = self._extract_text_with_context(prep.model_text, self.max_text_chars)
+
+        spam_meta = self._spam_gate.predict(text, skip=skip_spam_gate)
+        spam_decision = self._spam_gate.build_decision(spam_meta)
         if spam_decision["status"] == "block":
             return self._spam_result(
-                call_id=call.call_id,
                 spam_meta=spam_meta,
                 spam_decision=spam_decision,
                 allowed_intents=allowed_intents,
@@ -141,7 +142,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             )
         if spam_decision["status"] == "review":
             return self._spam_review_result(
-                call_id=call.call_id,
                 spam_meta=spam_meta,
                 spam_decision=spam_decision,
                 processing_time_ms=(time.time() - started) * 1000.0,
@@ -150,10 +150,9 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             )
 
         runtime_intent_ids = self._stage2_runtime_intent_ids(allowed_intents)
-        probs, meta = self._predict_with_finetuned_model(text, runtime_intent_ids)
+        probs, meta = self._finetuned_router.predict(text, runtime_intent_ids)
         if probs is None:
             return self._triage_result(
-                call_id=call.call_id,
                 reason=f"finetuned_unavailable:{meta.get('reason', 'unknown')}",
                 processing_time_ms=(time.time() - started) * 1000.0,
                 text_len=len(text),
@@ -168,7 +167,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
 
         if confidence < self.min_confidence:
             return self._triage_result(
-                call_id=call.call_id,
                 reason=f"low_confidence:{confidence:.3f}",
                 processing_time_ms=(time.time() - started) * 1000.0,
                 text_len=len(text),
@@ -216,59 +214,10 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         return analysis
 
     def get_training_status(self, allowed_intents: Optional[Dict[str, Dict]] = None) -> Dict[str, Any]:
-        with self._state_lock:
-            artifact = dict(self._tuned_artifact or {})
-            report = dict(self._last_train_report or {})
-            last_error = str(self._last_train_error or "")
-
-        if not artifact:
-            return {
-                "active": False,
-                "reason": "no_tuned_model",
-                "model_path": self.tuned_model_path,
-                "spam_gate": self._spam_gate_status(),
-                "finetuned_model": {
-                    "enabled": self.finetuned_enabled,
-                    "active": False,
-                    "model_path": self.finetuned_model_path,
-                },
-                "last_train_report": report,
-                "last_train_error": last_error,
-            }
-
-        artifact_intents = list(artifact.get("intent_ids") or [])
         current_intents = self._stage2_runtime_intent_ids(allowed_intents or {}) if allowed_intents else None
-        compatible = current_intents is None or self._same_intent_set(artifact_intents, current_intents)
-        order_matches = current_intents is not None and self._comparable_intent_ids(artifact_intents) == self._comparable_intent_ids(current_intents)
-
-        finetuned_model = artifact.get("finetuned_model") if isinstance(artifact.get("finetuned_model"), dict) else {}
-        finetuned_ready = bool(finetuned_model and finetuned_model.get("enabled"))
-        active = compatible and finetuned_ready
-        reason = "ok" if active else ("intents_mismatch" if not compatible else "no_finetuned_model")
-        calibration = self._artifact_calibration(artifact)
-
-        return {
-            "active": active,
-            "reason": reason,
-            "model_path": self.tuned_model_path,
-            "version_id": artifact.get("version_id", ""),
-            "trained_at": artifact.get("trained_at", ""),
-            "intent_ids": artifact_intents,
-            "current_intents": current_intents,
-            "intent_order_matches_current": order_matches,
-            "metrics": artifact.get("metrics", {}),
-            "dataset": artifact.get("dataset", {}),
-            "spam_gate": self._spam_gate_status(),
-            "finetuned_model": {
-                "enabled": self.finetuned_enabled,
-                "active": active,
-                "model_path": finetuned_model.get("model_path", self.finetuned_model_path),
-                "metrics": finetuned_model.get("metrics", {}),
-                "calibration": calibration,
-            },
-            "last_train_report": report,
-            "last_train_error": last_error,
-        }
+        status = self._finetuned_router.status(current_intents=current_intents)
+        status["spam_gate"] = self._spam_gate.status()
+        return status
 
     def train_tuned_head(
         self,
@@ -282,92 +231,26 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         val_ratio: float = 0.2,
         random_seed: int = 42,
     ) -> Dict[str, Any]:
-        started = time.time()
-        self._set_last_train_error("")
-        if not self.finetuned_enabled:
-            raise RuntimeError("fine-tuning is disabled (set ROUTER_FINETUNED_ENABLED=1)")
-
-        samples, dataset_meta = self._collect_training_samples(allowed_intents, feedback_path)
-        if not samples:
-            raise RuntimeError("no training samples after preprocessing")
-
-        intent_ids = self._stage2_runtime_intent_ids(allowed_intents)
-        label_to_idx = {iid: i for i, iid in enumerate(intent_ids)}
-        filtered: List[Dict[str, Any]] = []
-        for sample in samples:
-            intent_id = str(sample.get("intent_id") or "").strip()
-            idx = label_to_idx.get(intent_id)
-            if idx is None:
-                continue
-            item = dict(sample)
-            item["label_idx"] = int(idx)
-            filtered.append(item)
-
-        if len(filtered) < max(30, len(intent_ids) * 3):
-            raise RuntimeError(
-                f"insufficient labeled data for training: {len(filtered)} samples for {len(intent_ids)} intents"
-            )
-
-        texts = [str(row.get("text") or "") for row in filtered]
-        labels = [int(row.get("label_idx")) for row in filtered]
-        train_idx, val_idx = self._stratified_split(labels, val_ratio=float(val_ratio), random_seed=int(random_seed))
-        if not train_idx:
-            raise RuntimeError("stratified split produced empty train set")
-
-        report_finetuned, artifact_finetuned = self._train_finetuned_rubert(
-            texts=texts,
-            labels=labels,
-            intent_ids=intent_ids,
-            train_idx=train_idx,
-            val_idx=val_idx,
-            random_seed=int(random_seed),
+        return self._finetuned_router.train(
+            allowed_intents=allowed_intents,
+            runtime_intent_ids=self._stage2_runtime_intent_ids(allowed_intents),
+            feedback_path=feedback_path,
+            output_path=output_path,
             epochs=int(epochs),
             batch_size=int(batch_size),
             learning_rate=float(learning_rate),
+            val_ratio=float(val_ratio),
+            random_seed=int(random_seed),
         )
 
-        trained_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        version_id = f"tuned-{int(time.time())}"
-        artifact = {
-            "artifact_version": 4,
-            "version_id": version_id,
-            "trained_at": trained_at,
-            "model_name": self.model_name,
-            "intent_ids": intent_ids,
-            "metrics": report_finetuned.get("metrics", {}),
-            "dataset": {
-                **dataset_meta,
-                "samples_total": len(filtered),
-                "samples_train": len(train_idx),
-                "samples_val": len(val_idx),
-            },
-            "finetuned_model": artifact_finetuned,
-        }
-        self._save_tuned_artifact(output_path, artifact)
-        self._activate_tuned_artifact(artifact)
-
-        report = {
-            "ok": True,
-            "version_id": version_id,
-            "trained_at": trained_at,
-            "duration_sec": round(time.time() - started, 2),
-            "output_path": output_path,
-            "metrics": artifact["metrics"],
-            "dataset": artifact["dataset"],
-            "finetuned_model": report_finetuned,
-        }
-        self._set_last_train_report(report)
-        return report
-
     def reload_tuned_head_from_disk(self) -> Dict[str, Any]:
-        self._load_tuned_artifact_from_disk()
-        self._load_spam_gate_artifact_from_disk()
+        self._finetuned_router.reload_from_disk()
+        self._spam_gate.reload_from_disk()
         return self.get_training_status()
 
     def _triage_result(
         self,
         *,
-        call_id: str,
         reason: str,
         processing_time_ms: float,
         text_len: int,
@@ -376,7 +259,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
     ) -> AIAnalysis:
         return AIAnalysis(
             intent=IntentResult(
-                intent_id="misc.triage",
+                intent_id=RESERVED_FALLBACK_INTENT_ID,
                 confidence=0.0,
                 evidence=[],
                 notes=reason,
@@ -397,7 +280,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
     def _spam_result(
         self,
         *,
-        call_id: str,
         spam_meta: Dict[str, Any],
         spam_decision: Dict[str, Any],
         allowed_intents: Dict[str, Dict[str, Any]],
@@ -433,7 +315,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
     def _spam_review_result(
         self,
         *,
-        call_id: str,
         spam_meta: Dict[str, Any],
         spam_decision: Dict[str, Any],
         processing_time_ms: float,
@@ -462,880 +343,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             },
         )
 
-    def _predict_with_spam_gate(self, text: str, *, skip: bool = False) -> Dict[str, Any]:
-        with self._state_lock:
-            artifact = dict(self._spam_artifact or {})
-        backend = self._spam_gate_backend(artifact)
-
-        if skip:
-            return {
-                "enabled": self.spam_gate_enabled,
-                "active": False,
-                "skipped": True,
-                "reason": "skip_spam_gate_requested",
-                "backend": backend,
-            }
-        if not self.spam_gate_enabled:
-            return {"enabled": False, "active": False, "reason": "spam_gate_disabled", "backend": backend}
-        if not artifact:
-            return {"enabled": True, "active": False, "reason": "no_spam_gate_model", "backend": backend}
-
-        gate_meta = artifact.get("spam_gate")
-        if not isinstance(gate_meta, dict) or not gate_meta.get("enabled"):
-            return {"enabled": True, "active": False, "reason": "spam_gate_not_enabled", "backend": backend}
-
-        labels = self._spam_gate_labels(artifact)
-        positive_label = str(gate_meta.get("positive_label") or self.spam_gate_positive_label).strip() or self.spam_gate_positive_label
-        if positive_label not in labels:
-            return {"enabled": True, "active": False, "reason": "positive_label_missing", "backend": backend}
-
-        try:
-            if backend == "sklearn_tfidf":
-                probs, model_path = self._predict_with_sklearn_spam_gate(
-                    text=text,
-                    artifact=artifact,
-                    gate_meta=gate_meta,
-                    labels=labels,
-                )
-                temperature = 1.0
-            else:
-                probs, temperature, model_path = self._predict_with_transformer_spam_gate(
-                    text=text,
-                    artifact=artifact,
-                    gate_meta=gate_meta,
-                    labels=labels,
-                )
-            best_idx = int(torch.argmax(probs).item())
-            positive_idx = labels.index(positive_label)
-            positive_confidence = float(probs[positive_idx].item())
-            return {
-                "enabled": True,
-                "active": True,
-                "labels": labels,
-                "positive_label": positive_label,
-                "predicted_label": labels[best_idx],
-                "positive_confidence": positive_confidence,
-                "threshold": float(gate_meta.get("threshold") or self.spam_gate_threshold),
-                "allow_threshold": float(gate_meta.get("allow_threshold") or self.spam_gate_allow_threshold),
-                "temperature": temperature,
-                "model_path": model_path or gate_meta.get("model_path", ""),
-                "trained_at": gate_meta.get("trained_at", ""),
-                "backend": backend,
-            }
-        except Exception as exc:
-            logger.warning("Failed to run spam gate model: %s", exc)
-            return {"enabled": True, "active": False, "reason": f"runtime_error:{exc}", "backend": backend}
-
-    def _build_spam_gate_decision(self, spam_meta: Dict[str, Any]) -> Dict[str, Any]:
-        threshold_high = float(spam_meta.get("threshold") or self.spam_gate_threshold)
-        threshold_low = float(spam_meta.get("allow_threshold") or self.spam_gate_allow_threshold)
-        threshold_low = max(0.0, min(threshold_low, threshold_high))
-        confidence = float(spam_meta.get("positive_confidence") or 0.0)
-        predicted_label = str(spam_meta.get("predicted_label") or "").strip()
-        positive_label = str(spam_meta.get("positive_label") or self.spam_gate_positive_label).strip() or self.spam_gate_positive_label
-
-        status = "allow"
-        reason = str(spam_meta.get("reason") or "ok")
-        if spam_meta.get("skipped"):
-            reason = "skip_spam_gate_requested"
-        elif spam_meta.get("active"):
-            if predicted_label == positive_label and confidence >= threshold_high:
-                status = "block"
-                reason = f"positive_confidence>={threshold_high:.3f}"
-            elif confidence <= threshold_low:
-                status = "allow"
-                reason = f"positive_confidence<={threshold_low:.3f}"
-            else:
-                status = "review"
-                reason = f"manual_review_required:{threshold_low:.3f}<{confidence:.3f}<{threshold_high:.3f}"
-
-        return {
-            "status": status,
-            "predicted_label": predicted_label,
-            "confidence": confidence,
-            "threshold_low": threshold_low,
-            "threshold_high": threshold_high,
-            "reason": reason,
-            "skipped": bool(spam_meta.get("skipped")),
-            "backend": str(spam_meta.get("backend") or self._spam_gate_backend({})),
-        }
-
-    def _predict_with_transformer_spam_gate(
-        self,
-        *,
-        text: str,
-        artifact: Dict[str, Any],
-        gate_meta: Dict[str, Any],
-        labels: List[str],
-    ) -> Tuple[torch.Tensor, float, str]:
-        model, tokenizer, max_len = self._ensure_transformer_spam_gate_loaded(artifact, labels)
-        enc = tokenizer(
-            [text],
-            truncation=True,
-            padding=True,
-            max_length=max_len,
-            return_tensors="pt",
-        )
-        enc = {k: v.to(self.device) for k, v in enc.items()}
-        temperature = self._artifact_model_temperature(gate_meta)
-        with torch.inference_mode():
-            logits = model(**enc).logits
-            probs = torch.softmax(logits / temperature, dim=1).squeeze(0)
-        return probs, temperature, str(gate_meta.get("model_path") or "")
-
-    def _predict_with_sklearn_spam_gate(
-        self,
-        *,
-        text: str,
-        artifact: Dict[str, Any],
-        gate_meta: Dict[str, Any],
-        labels: List[str],
-    ) -> Tuple[torch.Tensor, str]:
-        model, vectorizer, model_path = self._ensure_sklearn_spam_gate_loaded(artifact)
-        features = vectorizer.transform([text])
-        if hasattr(model, "predict_proba"):
-            prob_list = model.predict_proba(features)[0]
-        else:
-            decision = model.decision_function(features)
-            if hasattr(decision, "tolist"):
-                decision = decision.tolist()
-            if isinstance(decision, list) and decision and isinstance(decision[0], list):
-                decision = decision[0]
-            if not isinstance(decision, list):
-                decision = [float(decision)]
-            if len(decision) == 1:
-                score = float(decision[0])
-                prob_pos = 1.0 / (1.0 + math.exp(-score))
-                prob_list = [1.0 - prob_pos, prob_pos]
-            else:
-                tensor = torch.tensor(decision, dtype=torch.float32)
-                prob_list = torch.softmax(tensor, dim=0).tolist()
-        probs = torch.tensor([float(x) for x in prob_list], dtype=torch.float32)
-        if probs.numel() != len(labels):
-            raise RuntimeError(f"spam gate classes mismatch: model={probs.numel()} labels={len(labels)}")
-        return probs, model_path
-
-    def _predict_with_finetuned_model(
-        self,
-        text: str,
-        runtime_intent_ids: List[str],
-    ) -> Tuple[Optional[torch.Tensor], Dict[str, Any]]:
-        if not self.finetuned_enabled:
-            return None, {"active": False, "reason": "finetuned_disabled"}
-
-        with self._state_lock:
-            artifact = dict(self._tuned_artifact or {})
-        if not artifact:
-            return None, {"active": False, "reason": "no_tuned_model"}
-
-        finetuned_meta = artifact.get("finetuned_model")
-        if not isinstance(finetuned_meta, dict) or not finetuned_meta.get("enabled"):
-            return None, {"active": False, "reason": "no_finetuned_model"}
-
-        artifact_intents = self._artifact_intent_ids(artifact)
-        if not self._same_intent_set(artifact_intents, runtime_intent_ids):
-            return None, {
-                "active": False,
-                "reason": "intents_mismatch",
-                "artifact_intents_n": len(artifact_intents),
-                "runtime_intents_n": len(runtime_intent_ids),
-            }
-
-        try:
-            model, tokenizer, max_len = self._ensure_finetuned_model_loaded(artifact, artifact_intents)
-            enc = tokenizer(
-                [text],
-                truncation=True,
-                padding=True,
-                max_length=max_len,
-                return_tensors="pt",
-            )
-            enc = {k: v.to(self.device) for k, v in enc.items()}
-            temperature = self._artifact_temperature(artifact)
-            with torch.inference_mode():
-                logits = model(**enc).logits
-                probs = torch.softmax(logits / temperature, dim=1).squeeze(0)
-            return probs, {
-                "active": True,
-                "trained_at": finetuned_meta.get("trained_at", ""),
-                "model_path": finetuned_meta.get("model_path", ""),
-                "intent_ids": artifact_intents,
-                "temperature": temperature,
-            }
-        except Exception as exc:
-            logger.warning("Failed to run fine-tuned RuBERT head: %s", exc)
-            return None, {"active": False, "reason": f"runtime_error:{exc}"}
-
-    def _ensure_finetuned_model_loaded(
-        self,
-        artifact: Dict[str, Any],
-        model_intent_ids: List[str],
-    ) -> Tuple[AutoModelForSequenceClassification, Any, int]:
-        intent_key = tuple(model_intent_ids)
-        finetuned_artifact = artifact.get("finetuned_model")
-        if not isinstance(finetuned_artifact, dict):
-            raise RuntimeError("finetuned model metadata is missing")
-        model_path = str(finetuned_artifact.get("model_path") or "").strip()
-        if not model_path:
-            raise RuntimeError("finetuned model path is empty")
-
-        with self._state_lock:
-            if (
-                self._finetuned_model is not None
-                and self._finetuned_tokenizer is not None
-                and self._active_finetuned_intents == intent_key
-                and self._active_finetuned_path == model_path
-            ):
-                max_len = int(finetuned_artifact.get("max_length") or self.finetuned_max_length)
-                return self._finetuned_model, self._finetuned_tokenizer, max_len
-
-            model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
-            model.eval()
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
-            if int(model.config.num_labels) != len(model_intent_ids):
-                raise RuntimeError(
-                    f"finetuned model classes mismatch: model={int(model.config.num_labels)} runtime={len(model_intent_ids)}"
-                )
-
-            self._finetuned_model = model
-            self._finetuned_tokenizer = tokenizer
-            self._active_finetuned_intents = intent_key
-            self._active_finetuned_path = model_path
-            max_len = int(finetuned_artifact.get("max_length") or self.finetuned_max_length)
-            return model, tokenizer, max_len
-
-    def _ensure_transformer_spam_gate_loaded(
-        self,
-        artifact: Dict[str, Any],
-        labels: List[str],
-    ) -> Tuple[AutoModelForSequenceClassification, Any, int]:
-        gate_meta = artifact.get("spam_gate")
-        if not isinstance(gate_meta, dict):
-            raise RuntimeError("spam gate metadata is missing")
-        model_path = str(gate_meta.get("model_path") or "").strip()
-        if not model_path:
-            raise RuntimeError("spam gate model path is empty")
-
-        with self._state_lock:
-            if (
-                self._spam_model is not None
-                and self._spam_tokenizer is not None
-                and self._active_spam_path == model_path
-            ):
-                max_len = int(gate_meta.get("max_length") or self.finetuned_max_length)
-                return self._spam_model, self._spam_tokenizer, max_len
-
-            model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
-            model.eval()
-            tokenizer = AutoTokenizer.from_pretrained(model_path)
-            if int(model.config.num_labels) != len(labels):
-                raise RuntimeError(
-                    f"spam gate classes mismatch: model={int(model.config.num_labels)} labels={len(labels)}"
-                )
-
-            self._spam_model = model
-            self._spam_tokenizer = tokenizer
-            self._spam_vectorizer = None
-            self._active_spam_path = model_path
-            self._active_spam_backend = "hf_sequence_classifier"
-            max_len = int(gate_meta.get("max_length") or self.finetuned_max_length)
-            return model, tokenizer, max_len
-
-    def _ensure_sklearn_spam_gate_loaded(
-        self,
-        artifact: Dict[str, Any],
-    ) -> Tuple[Any, Any, str]:
-        gate_meta = artifact.get("spam_gate")
-        if not isinstance(gate_meta, dict):
-            raise RuntimeError("spam gate metadata is missing")
-        model_path_raw = str(gate_meta.get("model_path") or "").strip()
-        if not model_path_raw:
-            raise RuntimeError("spam gate model path is empty")
-
-        model_dir = Path(model_path_raw)
-        if model_dir.is_file():
-            model_dir = model_dir.parent
-        if not model_dir.exists():
-            raise RuntimeError(f"spam gate model path not found: {model_dir}")
-
-        model_candidates = [
-            gate_meta.get("classifier_file"),
-            gate_meta.get("model_file"),
-            "model.joblib",
-            "classifier.joblib",
-            "svm.joblib",
-            "svm_model.joblib",
-        ]
-        vectorizer_candidates = [
-            gate_meta.get("vectorizer_file"),
-            "vectorizer.joblib",
-            "tfidf.joblib",
-            "tfidf_vectorizer.joblib",
-        ]
-        model_file = self._resolve_model_file(model_dir, model_candidates, "classifier/model")
-        vectorizer_file = self._resolve_model_file(model_dir, vectorizer_candidates, "vectorizer")
-
-        with self._state_lock:
-            if (
-                self._spam_model is not None
-                and self._spam_vectorizer is not None
-                and self._active_spam_path == str(model_dir)
-                and self._active_spam_backend == "sklearn_tfidf"
-            ):
-                return self._spam_model, self._spam_vectorizer, str(model_dir)
-
-            model = joblib.load(model_file)
-            vectorizer = joblib.load(vectorizer_file)
-
-            self._spam_model = model
-            self._spam_tokenizer = None
-            self._spam_vectorizer = vectorizer
-            self._active_spam_path = str(model_dir)
-            self._active_spam_backend = "sklearn_tfidf"
-            return model, vectorizer, str(model_dir)
-
-    def _collect_training_samples(
-        self,
-        allowed_intents: Dict[str, Dict],
-        feedback_path: str,
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        seen = set()
-        rows: List[Dict[str, Any]] = []
-        source_counts: Dict[str, int] = defaultdict(int)
-        class_counts: Dict[str, int] = defaultdict(int)
-
-        for intent_id, meta in allowed_intents.items():
-            base_examples = list(meta.get("examples") or [])
-            if meta.get("title"):
-                base_examples.append(str(meta["title"]))
-            for example in base_examples:
-                text = self._prepare_training_text(str(example))
-                if not text:
-                    continue
-                key = (intent_id, text.lower())
-                if key in seen:
-                    continue
-                seen.add(key)
-                rows.append({"text": text, "intent_id": intent_id, "source": "intent_examples"})
-                source_counts["intent_examples"] += 1
-                class_counts[intent_id] += 1
-
-        feedback_file = Path(feedback_path)
-        if feedback_file.exists() and feedback_file.is_file():
-            for raw_line in feedback_file.read_text(encoding="utf-8").splitlines():
-                line = raw_line.strip()
-                if not line:
-                    continue
-                try:
-                    item = json.loads(line)
-                except Exception:
-                    continue
-
-                final = item.get("final") or {}
-                intent_id = str(final.get("intent_id") or "").strip()
-                if intent_id not in allowed_intents:
-                    continue
-
-                text = str(item.get("training_sample") or "").strip()
-                if not text:
-                    text = str(item.get("transcript_text") or "").strip()
-                text = self._prepare_training_text(text)
-                if not text:
-                    continue
-
-                key = (intent_id, text.lower())
-                if key in seen:
-                    continue
-                seen.add(key)
-                rows.append({"text": text, "intent_id": intent_id, "source": "operator_feedback"})
-                source_counts["operator_feedback"] += 1
-                class_counts[intent_id] += 1
-
-        dataset_meta = {
-            "source_counts": dict(source_counts),
-            "class_counts": dict(class_counts),
-            "feedback_path": str(feedback_file),
-        }
-        return rows, dataset_meta
-
-    def _prepare_training_text(self, text: str) -> str:
-        if not text:
-            return ""
-        cleaned = re.sub(r"\s+", " ", text).strip()
-        if len(cleaned) < 6:
-            return ""
-        if len(cleaned) > self.max_text_chars:
-            cleaned = self._extract_text_with_context(cleaned, self.max_text_chars)
-        return cleaned
-
-    def _train_finetuned_rubert(
-        self,
-        *,
-        texts: List[str],
-        labels: List[int],
-        intent_ids: List[str],
-        train_idx: List[int],
-        val_idx: List[int],
-        random_seed: int,
-        epochs: int,
-        batch_size: int,
-        learning_rate: float,
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        model_path = str(self.finetuned_model_path or "").strip()
-        if not model_path:
-            raise RuntimeError("ROUTER_FINETUNED_MODEL_PATH is empty")
-        if not train_idx:
-            raise RuntimeError("empty train set for fine-tuned model")
-        if not val_idx:
-            val_idx = list(train_idx)
-
-        train_texts = [texts[i] for i in train_idx]
-        val_texts = [texts[i] for i in val_idx]
-        train_labels = torch.tensor([labels[i] for i in train_idx], dtype=torch.long)
-        val_labels = torch.tensor([labels[i] for i in val_idx], dtype=torch.long)
-
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        train_enc = tokenizer(
-            train_texts,
-            truncation=True,
-            padding=True,
-            max_length=self.finetuned_max_length,
-            return_tensors="pt",
-        )
-        val_enc = tokenizer(
-            val_texts,
-            truncation=True,
-            padding=True,
-            max_length=self.finetuned_max_length,
-            return_tensors="pt",
-        )
-
-        train_ds = TensorDataset(train_enc["input_ids"], train_enc["attention_mask"], train_labels)
-        val_ds = TensorDataset(val_enc["input_ids"], val_enc["attention_mask"], val_labels)
-
-        batch_size = int(max(4, min(64, batch_size)))
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
-
-        model = AutoModelForSequenceClassification.from_pretrained(
-            self.model_name,
-            num_labels=len(intent_ids),
-        ).to(self.device)
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=float(max(1e-6, min(1e-3, learning_rate))),
-            weight_decay=float(self.finetuned_weight_decay),
-        )
-        class_weights = self._build_class_weights(train_labels, len(intent_ids)).to(self.device)
-        criterion = nn.CrossEntropyLoss(weight=class_weights)
-
-        torch.manual_seed(int(random_seed))
-        random.seed(int(random_seed))
-
-        best_state = None
-        best_val_f1 = -1.0
-        best_epoch = 0
-        patience = 2
-        no_improve = 0
-        epochs = int(max(1, min(12, epochs)))
-
-        for epoch in range(1, epochs + 1):
-            model.train()
-            for input_ids, attention_mask, yb in train_loader:
-                input_ids = input_ids.to(self.device)
-                attention_mask = attention_mask.to(self.device)
-                yb = yb.to(self.device)
-
-                optimizer.zero_grad(set_to_none=True)
-                logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
-                loss = criterion(logits, yb)
-                loss.backward()
-                optimizer.step()
-
-            val_metrics = self._evaluate_finetuned(model, val_loader, criterion)
-            val_f1 = float(val_metrics.get("macro_f1", 0.0))
-            if val_f1 > best_val_f1 + 1e-6:
-                best_val_f1 = val_f1
-                best_epoch = epoch
-                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-                no_improve = 0
-            else:
-                no_improve += 1
-            if no_improve >= patience:
-                break
-
-        if best_state is None:
-            raise RuntimeError("fine-tuning failed: no best checkpoint")
-
-        model.load_state_dict(best_state)
-        train_eval_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=False)
-        train_metrics = self._evaluate_finetuned(model, train_eval_loader, criterion)
-        val_metrics = self._evaluate_finetuned(model, val_loader, criterion)
-
-        save_dir = Path(model_path)
-        save_dir.mkdir(parents=True, exist_ok=True)
-        model.save_pretrained(str(save_dir))
-        tokenizer.save_pretrained(str(save_dir))
-
-        trained_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        meta_payload = {
-            "model_name": self.model_name,
-            "intent_ids": intent_ids,
-            "trained_at": trained_at,
-            "max_length": self.finetuned_max_length,
-            "epochs": epochs,
-            "learning_rate": learning_rate,
-            "batch_size": batch_size,
-        }
-        (save_dir / "intent_ids.json").write_text(
-            json.dumps(meta_payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-        report = {
-            "enabled": True,
-            "best_epoch": best_epoch,
-            "model_path": str(save_dir),
-            "metrics": {
-                "train": train_metrics,
-                "val": val_metrics,
-                "epochs_requested": epochs,
-            },
-            "dataset": {
-                "samples_total": len(texts),
-                "samples_train": len(train_idx),
-                "samples_val": len(val_idx),
-            },
-        }
-        artifact = {
-            "enabled": True,
-            "model_path": str(save_dir),
-            "intent_ids": intent_ids,
-            "trained_at": trained_at,
-            "max_length": self.finetuned_max_length,
-            "metrics": report["metrics"],
-            "dataset": report["dataset"],
-        }
-        return report, artifact
-
-    def _evaluate_finetuned(
-        self,
-        model: AutoModelForSequenceClassification,
-        loader: DataLoader,
-        criterion: nn.Module,
-    ) -> Dict[str, float]:
-        model.eval()
-        losses: List[float] = []
-        preds: List[torch.Tensor] = []
-        targets: List[torch.Tensor] = []
-        with torch.inference_mode():
-            for input_ids, attention_mask, yb in loader:
-                input_ids = input_ids.to(self.device)
-                attention_mask = attention_mask.to(self.device)
-                yb = yb.to(self.device)
-                logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
-                loss = criterion(logits, yb)
-                losses.append(float(loss.item()))
-                preds.append(torch.argmax(logits, dim=1).detach().cpu())
-                targets.append(yb.detach().cpu())
-
-        pred = torch.cat(preds, dim=0) if preds else torch.empty(0, dtype=torch.long)
-        target = torch.cat(targets, dim=0) if targets else torch.empty(0, dtype=torch.long)
-        acc = float((pred == target).float().mean().item()) if target.numel() > 0 else 0.0
-        macro_precision, macro_recall, macro_f1 = self._macro_precision_recall_f1(pred, target)
-        return {
-            "loss": round(sum(losses) / max(1, len(losses)), 6),
-            "accuracy": round(acc, 6),
-            "macro_precision": round(macro_precision, 6),
-            "macro_recall": round(macro_recall, 6),
-            "macro_f1": round(macro_f1, 6),
-        }
-
-    def _load_tuned_artifact_from_disk(self) -> None:
-        if not self.tuned_model_path:
-            self._clear_tuned_artifact()
-            return
-        path = Path(self.tuned_model_path)
-        if not path.exists():
-            self._clear_tuned_artifact()
-            logger.info("No tuned router artifact found at %s", path)
-            return
-        try:
-            payload = torch.load(path, map_location="cpu")
-            if not isinstance(payload, dict):
-                raise RuntimeError("invalid tuned artifact payload")
-            self._activate_tuned_artifact(payload)
-            logger.info("Loaded tuned router artifact from %s", path)
-        except Exception as exc:
-            self._clear_tuned_artifact()
-            logger.warning("Failed to load tuned router artifact from %s: %s", path, exc)
-
-    def _load_spam_gate_artifact_from_disk(self) -> None:
-        if not self.spam_gate_artifact_path:
-            self._clear_spam_gate_artifact()
-            return
-        path = Path(self.spam_gate_artifact_path)
-        if not path.exists():
-            self._clear_spam_gate_artifact()
-            logger.info("No spam gate artifact found at %s", path)
-            return
-        try:
-            payload = torch.load(path, map_location="cpu")
-            if not isinstance(payload, dict):
-                raise RuntimeError("invalid spam gate artifact payload")
-            self._activate_spam_gate_artifact(payload)
-            logger.info("Loaded spam gate artifact from %s", path)
-        except Exception as exc:
-            self._clear_spam_gate_artifact()
-            logger.warning("Failed to load spam gate artifact from %s: %s", path, exc)
-
-    def _save_tuned_artifact(self, output_path: str, artifact: Dict[str, Any]) -> None:
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        torch.save(artifact, tmp)
-        os.replace(tmp, path)
-
-    def _activate_tuned_artifact(self, artifact: Dict[str, Any]) -> None:
-        with self._state_lock:
-            self._tuned_artifact = dict(artifact)
-            self._finetuned_model = None
-            self._finetuned_tokenizer = None
-            self._active_finetuned_intents = None
-            self._active_finetuned_path = ""
-
-    def _activate_spam_gate_artifact(self, artifact: Dict[str, Any]) -> None:
-        with self._state_lock:
-            self._spam_artifact = dict(artifact)
-            self._spam_model = None
-            self._spam_tokenizer = None
-            self._spam_vectorizer = None
-            self._active_spam_path = ""
-            self._active_spam_backend = self._spam_gate_backend(artifact)
-
-    def _clear_tuned_artifact(self) -> None:
-        with self._state_lock:
-            self._tuned_artifact = None
-            self._finetuned_model = None
-            self._finetuned_tokenizer = None
-            self._active_finetuned_intents = None
-            self._active_finetuned_path = ""
-
-    def _clear_spam_gate_artifact(self) -> None:
-        with self._state_lock:
-            self._spam_artifact = None
-            self._spam_model = None
-            self._spam_tokenizer = None
-            self._spam_vectorizer = None
-            self._active_spam_path = ""
-            self._active_spam_backend = ""
-
-    def _set_last_train_report(self, report: Dict[str, Any]) -> None:
-        with self._state_lock:
-            self._last_train_report = dict(report)
-            self._last_train_error = ""
-
-    def _set_last_train_error(self, error: str) -> None:
-        with self._state_lock:
-            self._last_train_error = str(error or "")
-
-    def _stratified_split(self, labels: List[int], val_ratio: float, random_seed: int) -> Tuple[List[int], List[int]]:
-        by_class: Dict[int, List[int]] = defaultdict(list)
-        for idx, label in enumerate(labels):
-            by_class[int(label)].append(idx)
-
-        rnd = random.Random(int(random_seed))
-        train_idx: List[int] = []
-        val_idx: List[int] = []
-        val_ratio = max(0.0, min(0.5, float(val_ratio)))
-
-        for _, indices in by_class.items():
-            rnd.shuffle(indices)
-            if len(indices) <= 1 or val_ratio <= 0.0:
-                train_idx.extend(indices)
-                continue
-            take_val = max(1, int(len(indices) * val_ratio))
-            take_val = min(take_val, len(indices) - 1)
-            val_idx.extend(indices[:take_val])
-            train_idx.extend(indices[take_val:])
-
-        rnd.shuffle(train_idx)
-        rnd.shuffle(val_idx)
-        return train_idx, val_idx
-
-    def _artifact_intent_ids(self, artifact: Dict[str, Any]) -> List[str]:
-        intent_ids = [str(x).strip() for x in list(artifact.get("intent_ids") or []) if str(x).strip()]
-        if intent_ids:
-            return intent_ids
-
-        finetuned_model = artifact.get("finetuned_model")
-        if isinstance(finetuned_model, dict):
-            nested = [str(x).strip() for x in list(finetuned_model.get("intent_ids") or []) if str(x).strip()]
-            if nested:
-                return nested
-        return []
-
-    def _spam_gate_labels(self, artifact: Dict[str, Any]) -> List[str]:
-        labels = [str(x).strip() for x in list(artifact.get("labels") or []) if str(x).strip()]
-        if labels:
-            return labels
-        gate = artifact.get("spam_gate")
-        if isinstance(gate, dict):
-            nested = [str(x).strip() for x in list(gate.get("labels") or []) if str(x).strip()]
-            if nested:
-                return nested
-        return []
-
-    def _spam_gate_status(self) -> Dict[str, Any]:
-        with self._state_lock:
-            artifact = dict(self._spam_artifact or {})
-            active_backend = self._active_spam_backend
-        backend = self._spam_gate_backend(artifact)
-        if not self.spam_gate_enabled:
-            return {
-                "enabled": False,
-                "active": False,
-                "threshold": self.spam_gate_threshold,
-                "allow_threshold": self.spam_gate_allow_threshold,
-                "reason": "spam_gate_disabled",
-                "backend": backend,
-            }
-        if not artifact:
-            return {
-                "enabled": True,
-                "active": False,
-                "threshold": self.spam_gate_threshold,
-                "allow_threshold": self.spam_gate_allow_threshold,
-                "reason": "no_spam_gate_model",
-                "model_path": self.spam_gate_model_path,
-                "backend": backend,
-            }
-        gate = artifact.get("spam_gate") if isinstance(artifact.get("spam_gate"), dict) else {}
-        labels = self._spam_gate_labels(artifact)
-        active = bool(gate.get("enabled")) and len(labels) >= 2
-        return {
-            "enabled": True,
-            "active": active,
-            "reason": "ok" if active else "invalid_spam_gate_model",
-            "threshold": float(gate.get("threshold") or self.spam_gate_threshold),
-            "allow_threshold": float(gate.get("allow_threshold") or self.spam_gate_allow_threshold),
-            "positive_label": str(gate.get("positive_label") or self.spam_gate_positive_label),
-            "labels": labels,
-            "model_path": str(gate.get("model_path") or self.spam_gate_model_path),
-            "trained_at": str(gate.get("trained_at") or ""),
-            "calibration": self._artifact_model_calibration(gate),
-            "backend": backend,
-            "active_backend": active_backend or backend,
-        }
-
-    def _spam_gate_backend(self, artifact: Dict[str, Any]) -> str:
-        gate = artifact.get("spam_gate") if isinstance(artifact.get("spam_gate"), dict) else {}
-        backend = str(gate.get("backend") or artifact.get("backend") or "").strip().lower()
-        if backend in {"sklearn", "svm_tfidf", "svm+tfidf"}:
-            return "sklearn_tfidf"
-        if backend:
-            return backend
-        return "hf_sequence_classifier"
-
-    def _resolve_model_file(self, base_dir: Path, candidates: List[Any], label: str) -> Path:
-        for candidate in candidates:
-            name = str(candidate or "").strip()
-            if not name:
-                continue
-            path = Path(name)
-            if not path.is_absolute():
-                path = base_dir / path
-            if path.exists() and path.is_file():
-                return path
-        raise RuntimeError(f"missing spam gate {label} artifact in {base_dir}")
-
-    def _artifact_calibration(self, artifact: Dict[str, Any]) -> Dict[str, Any]:
-        finetuned_model = artifact.get("finetuned_model")
-        if isinstance(finetuned_model, dict) and isinstance(finetuned_model.get("calibration"), dict):
-            return dict(finetuned_model.get("calibration") or {})
-        if isinstance(artifact.get("calibration"), dict):
-            return dict(artifact.get("calibration") or {})
-        return {}
-
-    def _artifact_model_calibration(self, model_meta: Dict[str, Any]) -> Dict[str, Any]:
-        if isinstance(model_meta, dict) and isinstance(model_meta.get("calibration"), dict):
-            return dict(model_meta.get("calibration") or {})
-        return {}
-
-    def _artifact_temperature(self, artifact: Dict[str, Any]) -> float:
-        calibration = self._artifact_calibration(artifact)
-        try:
-            temperature = float(calibration.get("temperature", 1.0))
-        except Exception:
-            temperature = 1.0
-        if temperature <= 0.0:
-            return 1.0
-        return temperature
-
-    def _artifact_model_temperature(self, model_meta: Dict[str, Any]) -> float:
-        calibration = self._artifact_model_calibration(model_meta)
-        try:
-            temperature = float(calibration.get("temperature", 1.0))
-        except Exception:
-            temperature = 1.0
-        if temperature <= 0.0:
-            return 1.0
-        return temperature
-
-    def _same_intent_set(self, left: List[str], right: List[str]) -> bool:
-        left_norm = self._comparable_intent_ids(left)
-        right_norm = self._comparable_intent_ids(right)
-        return len(left_norm) == len(right_norm) and set(left_norm) == set(right_norm)
-
-    def _comparable_intent_ids(self, values: List[str]) -> List[str]:
-        return [
-            str(x).strip()
-            for x in values
-            if str(x).strip() and str(x).strip() != RESERVED_FALLBACK_INTENT_ID
-        ]
-
-    def _stage2_runtime_intent_ids(self, allowed_intents: Dict[str, Dict[str, Any]]) -> List[str]:
-        excluded = {RESERVED_FALLBACK_INTENT_ID}
-        if self.spam_gate_enabled:
-            excluded.add(RESERVED_SPAM_INTENT_ID)
-        return sorted(
-            str(intent_id).strip()
-            for intent_id in allowed_intents.keys()
-            if str(intent_id).strip() and str(intent_id).strip() not in excluded
-        )
-
-    def _build_class_weights(self, labels: torch.Tensor, num_classes: int) -> torch.Tensor:
-        counts = torch.bincount(labels, minlength=num_classes).float().clamp(min=1.0)
-        inv = 1.0 / counts
-        return inv / inv.mean()
-
-    def _macro_precision_recall_f1(self, pred: torch.Tensor, target: torch.Tensor) -> Tuple[float, float, float]:
-        if target.numel() == 0:
-            return 0.0, 0.0, 0.0
-        labels = sorted({int(x.item()) for x in target})
-        precision_scores: List[float] = []
-        recall_scores: List[float] = []
-        f1_scores: List[float] = []
-        for label in labels:
-            p = pred == label
-            t = target == label
-            tp = float((p & t).sum().item())
-            fp = float((p & ~t).sum().item())
-            fn = float((~p & t).sum().item())
-            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-            precision_scores.append(precision)
-            recall_scores.append(recall)
-            if precision + recall == 0:
-                f1_scores.append(0.0)
-            else:
-                f1_scores.append(2 * precision * recall / (precision + recall))
-
-        macro_precision = float(sum(precision_scores) / max(1, len(precision_scores)))
-        macro_recall = float(sum(recall_scores) / max(1, len(recall_scores)))
-        macro_f1 = float(sum(f1_scores) / max(1, len(f1_scores)))
-        return macro_precision, macro_recall, macro_f1
-
     def _extract_text_with_context(self, text: str, max_chars: int) -> str:
         if len(text) <= max_chars:
             return text
@@ -1350,3 +357,13 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         if raw not in {"low", "medium", "high", "critical"}:
             raw = "medium"
         return raw  # type: ignore[return-value]
+
+    def _stage2_runtime_intent_ids(self, allowed_intents: Dict[str, Dict[str, Any]]) -> list[str]:
+        excluded = {RESERVED_FALLBACK_INTENT_ID}
+        if self.spam_gate_enabled:
+            excluded.add(RESERVED_SPAM_INTENT_ID)
+        return sorted(
+            str(intent_id).strip()
+            for intent_id in allowed_intents.keys()
+            if str(intent_id).strip() and str(intent_id).strip() not in excluded
+        )

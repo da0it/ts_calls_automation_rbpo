@@ -54,3 +54,5 @@ postgres_data/
 .vscode/
 *.swp
 *.swo
+
+.swift-module-cache/

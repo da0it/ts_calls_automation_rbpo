@@ -253,6 +253,16 @@ def _as_float(value: Any, default: float, low: float, high: float) -> float:
     return max(low, min(high, parsed))
 
 
+def _optional_float_env(name: str) -> Optional[float]:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    return float(raw)
+
+
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
@@ -369,6 +379,9 @@ def serve() -> None:
     finetuned_batch_size = int(os.getenv("ROUTER_FINETUNED_BATCH_SIZE", "16"))
     finetuned_max_length = int(os.getenv("ROUTER_FINETUNED_MAX_LENGTH", "256"))
     finetuned_weight_decay = float(os.getenv("ROUTER_FINETUNED_WEIGHT_DECAY", "0.01"))
+    nlp_backend = os.getenv("ROUTER_NLP_BACKEND", "natasha").strip().lower() or "natasha"
+    nlp_text_mode = os.getenv("ROUTER_NLP_TEXT_MODE", "canonical").strip().lower() or "canonical"
+    nlp_stanza_resources_dir = os.getenv("ROUTER_NLP_STANZA_DIR", "").strip()
     spam_gate_enabled = os.getenv("ROUTER_SPAM_GATE_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
     spam_gate_model_path = os.getenv(
         "ROUTER_SPAM_GATE_MODEL_PATH",
@@ -380,6 +393,8 @@ def serve() -> None:
     )
     spam_gate_threshold = float(os.getenv("ROUTER_SPAM_GATE_THRESHOLD", "0.8"))
     spam_gate_allow_threshold = float(os.getenv("ROUTER_SPAM_GATE_ALLOW_THRESHOLD", "0.35"))
+    spam_gate_score_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_THRESHOLD")
+    spam_gate_score_allow_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_ALLOW_THRESHOLD")
     spam_gate_positive_label = os.getenv("ROUTER_SPAM_GATE_POSITIVE_LABEL", "spam").strip() or "spam"
 
     train_defaults = {
@@ -403,11 +418,16 @@ def serve() -> None:
         finetuned_batch_size=finetuned_batch_size,
         finetuned_max_length=finetuned_max_length,
         finetuned_weight_decay=finetuned_weight_decay,
+        nlp_backend=nlp_backend,
+        nlp_text_mode=nlp_text_mode,
+        nlp_stanza_resources_dir=nlp_stanza_resources_dir,
         spam_gate_enabled=spam_gate_enabled,
         spam_gate_model_path=spam_gate_model_path,
         spam_gate_artifact_path=spam_gate_artifact_path,
         spam_gate_threshold=spam_gate_threshold,
         spam_gate_allow_threshold=spam_gate_allow_threshold,
+        spam_gate_score_threshold=spam_gate_score_threshold,
+        spam_gate_score_allow_threshold=spam_gate_score_allow_threshold,
         spam_gate_positive_label=spam_gate_positive_label,
     )
 
