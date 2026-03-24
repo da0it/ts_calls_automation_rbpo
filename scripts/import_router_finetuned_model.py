@@ -191,9 +191,13 @@ def load_temperature_calibration(source_dir: Path, explicit_temperature_path: Pa
 
 
 def copy_model_tree(source_dir: Path, target_dir: Path) -> None:
+    if source_dir.resolve() == target_dir.resolve():
+        return
     target_dir.mkdir(parents=True, exist_ok=True)
     for item in source_dir.iterdir():
         dest = target_dir / item.name
+        if item.resolve() == dest.resolve():
+            continue
         if item.is_dir():
             shutil.copytree(item, dest, dirs_exist_ok=True)
         else:

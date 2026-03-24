@@ -1188,7 +1188,7 @@
             <strong>Reason:</strong> ${escapeHtml(spamCheck.reason || '-')}<br />
             <strong>Predicted label:</strong> ${escapeHtml(spamCheck.predicted_label || '-')}
           </div>
-          ${isAwaitingSpamReview(call) ? `
+          ${(isAwaitingSpamReview(call) || isSpamBlockedCall(call)) ? `
             <div class="toolbar">
               <button id="spam-review-spam-btn" class="btn btn-bad" type="button" ${state.spamReviewBusy ? 'disabled' : ''}>Spam</button>
               <button id="spam-review-not-spam-btn" class="btn btn-ok" type="button" ${state.spamReviewBusy ? 'disabled' : ''}>Not Spam</button>
@@ -1339,7 +1339,7 @@
 
     function bindSpamReviewActions() {
       const call = getSelectedCall();
-      if (!call || !isAwaitingSpamReview(call)) return;
+      if (!call || (!isAwaitingSpamReview(call) && !isSpamBlockedCall(call))) return;
 
       const spamBtn = document.getElementById('spam-review-spam-btn');
       const notSpamBtn = document.getElementById('spam-review-not-spam-btn');
@@ -1998,11 +1998,17 @@
 
     async function resolveSpamReview(decision) {
       const call = getSelectedCall();
-      if (!call || !isAwaitingSpamReview(call)) return;
+      if (!call || (!isAwaitingSpamReview(call) && !isSpamBlockedCall(call))) return;
 
       state.spamReviewBusy = true;
       renderActions();
-      setBanner(decision === 'spam' ? 'Marking call as spam...' : 'Passing call after manual spam review...', 'ok');
+      const isBlockedOverride = isSpamBlockedCall(call);
+      setBanner(
+        decision === 'spam'
+          ? 'Marking call as spam...'
+          : (isBlockedOverride ? 'Overriding spam block and continuing call...' : 'Passing call after manual spam review...'),
+        'ok'
+      );
 
       try {
         const payload = await apiJson('/api/v1/spam-review', {
@@ -2029,7 +2035,12 @@
         }
         persist();
         render();
-        setBanner(decision === 'spam' ? 'Call marked as spam. Ticket creation skipped.' : 'Spam gate overridden. Call continued through router.', 'ok');
+        setBanner(
+          decision === 'spam'
+            ? 'Call marked as spam. Ticket creation skipped.'
+            : 'Spam gate overridden. Call continued through router.',
+          'ok'
+        );
       } catch (err) {
         setBanner(String(err.message || err), 'error');
       } finally {

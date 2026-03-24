@@ -126,7 +126,14 @@ def ensure_source_model_complete(path: Path) -> None:
         raise RuntimeError("source model dir must contain model.safetensors or pytorch_model.bin")
 
 
-def resolve_optional_joblib(source_dir: Path, explicit_path: Path | None, names: List[str], label: str) -> Path:
+def resolve_optional_joblib(
+    source_dir: Path,
+    explicit_path: Path | None,
+    names: List[str],
+    label: str,
+    *,
+    required: bool = True,
+) -> Path | None:
     if explicit_path is not None:
         if not explicit_path.exists():
             raise RuntimeError(f"{label} not found: {explicit_path}")
@@ -135,7 +142,9 @@ def resolve_optional_joblib(source_dir: Path, explicit_path: Path | None, names:
         path = source_dir / name
         if path.exists():
             return path
-    raise RuntimeError(f"failed to locate {label}; checked: {', '.join(names)}")
+    if required:
+        raise RuntimeError(f"failed to locate {label}; checked: {', '.join(names)}")
+    return None
 
 
 def load_temperature_calibration(source_dir: Path, explicit_temperature_path: Path | None) -> Dict[str, Any]:
@@ -172,9 +181,13 @@ def load_temperature_calibration(source_dir: Path, explicit_temperature_path: Pa
 
 
 def copy_model_tree(source_dir: Path, target_dir: Path) -> None:
+    if source_dir.resolve() == target_dir.resolve():
+        return
     target_dir.mkdir(parents=True, exist_ok=True)
     for item in source_dir.iterdir():
         dest = target_dir / item.name
+        if item.resolve() == dest.resolve():
+            continue
         if item.is_dir():
             shutil.copytree(item, dest, dirs_exist_ok=True)
         else:
@@ -243,9 +256,11 @@ def main() -> int:
             vectorizer_path,
             ["vectorizer.joblib", "tfidf.joblib", "tfidf_vectorizer.joblib"],
             "vectorizer joblib",
+            required=False,
         )
         classifier_file_name = resolved_classifier_path.name
-        vectorizer_file_name = resolved_vectorizer_path.name
+        if resolved_vectorizer_path is not None:
+            vectorizer_file_name = resolved_vectorizer_path.name
 
     labels, mapping_source = load_model_labels(source_dir, label_encoder_path, resolved_classifier_path)
 
