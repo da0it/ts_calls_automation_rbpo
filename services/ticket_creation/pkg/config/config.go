@@ -54,7 +54,7 @@ func Load() *Config {
 		DatabaseURL:                   getEnv("DATABASE_URL", "postgres://localhost/tickets?sslmode=disable"),
 		PythonNERServiceURL:           getEnv("PYTHON_NER_SERVICE_URL", "http://localhost:5000"),
 		LLMProvider:                   getEnv("LLM_PROVIDER", "ollama"),
-		LLMRequestTimeoutSeconds:      getEnvInt("LLM_REQUEST_TIMEOUT_SECONDS", 60),
+		LLMRequestTimeoutSeconds:      getEnvInt("LLM_REQUEST_TIMEOUT_SECONDS", 180),
 		OllamaBaseURL:                 getEnv("OLLAMA_BASE_URL", "http://localhost:11434"),
 		OllamaModel:                   getEnv("OLLAMA_MODEL", "qwen2.5:7b"),
 		OllamaTemperature:             getEnvFloat("OLLAMA_TEMPERATURE", 0.2),

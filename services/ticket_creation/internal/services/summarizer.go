@@ -117,6 +117,12 @@ type ollamaResponse struct {
 	Error    string `json:"error"`
 }
 
+type structuredSummaryPayload struct {
+	Problem string `json:"problem"`
+	Context string `json:"context"`
+	Action  string `json:"action"`
+}
+
 func (s *LLMSummarizer) GenerateSummary(
 	segments []models.Segment,
 	intentID string,
@@ -272,6 +278,13 @@ func parseSummaryJSON(text, intentID, priority string) (*models.TicketSummary, e
 		}
 	}
 
+	var payload structuredSummaryPayload
+	if err := json.Unmarshal([]byte(jsonStr), &payload); err == nil {
+		if payload.Problem != "" || payload.Context != "" || payload.Action != "" {
+			return normalizeSummary(structuredPayloadToSummary(payload), intentID, priority), nil
+		}
+	}
+
 	var summary models.TicketSummary
 	if err := json.Unmarshal([]byte(jsonStr), &summary); err != nil {
 		return nil, fmt.Errorf("unmarshal summary JSON: %w", err)
@@ -311,40 +324,6 @@ func (s *LLMSummarizer) fallbackSummary(
 	}
 
 	return normalizeSummary(summary, intentID, priority)
-}
-
-func ticketSummarySystemPrompt() string {
-	return `Ты формируешь тикет первой линии поддержки по транскрипции телефонного звонка.
-Верни только JSON-объект без markdown и без пояснений.
-
-Формат ответа:
-{
-  "title": "Краткий заголовок тикета до 100 символов",
-  "description": "Краткое, но полезное описание сути обращения клиента",
-  "key_points": ["ключевой факт 1", "ключевой факт 2"],
-  "suggested_solution": "Что стоит сделать оператору или второй линии, если это очевидно",
-  "urgency_reason": "Почему обращение срочное, если приоритет high или critical"
-}
-
-Правила:
-- Пиши по-русски.
-- Не добавляй в title персональные данные.
-- Не выдумывай факты, которых нет в транскрипции.
-- Если suggested_solution или urgency_reason не нужны, верни пустую строку.
-- key_points верни массивом из 2-5 коротких пунктов.`
-}
-
-func buildSummaryUserPrompt(transcript, intentID, priority, entitiesInfo string) string {
-	return fmt.Sprintf(`Транскрипция звонка:
-%s
-
-Intent: %s
-Приоритет: %s
-
-Извлечённые сущности:
-%s
-
-Сгенерируй JSON по заданному формату.`, transcript, intentID, priority, entitiesInfo)
 }
 
 func normalizeSummary(summary *models.TicketSummary, intentID, priority string) *models.TicketSummary {
@@ -393,6 +372,23 @@ func truncateRunes(value string, limit int) string {
 
 func collapseWhitespace(value string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+}
+
+func structuredPayloadToSummary(payload structuredSummaryPayload) *models.TicketSummary {
+	lines := make([]string, 0, 3)
+	if value := collapseWhitespace(payload.Problem); value != "" {
+		lines = append(lines, "Проблема: "+value)
+	}
+	if value := collapseWhitespace(payload.Context); value != "" {
+		lines = append(lines, "Контекст: "+value)
+	}
+	if value := collapseWhitespace(payload.Action); value != "" {
+		lines = append(lines, "Действие: "+value)
+	}
+
+	return &models.TicketSummary{
+		Description: strings.Join(lines, "\n"),
+	}
 }
 
 func formatTranscript(segments []models.Segment) string {

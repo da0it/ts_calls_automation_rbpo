@@ -37,7 +37,7 @@ func TestGenerateSummaryWithOllama(t *testing.T) {
 		}
 
 		resp := ollamaResponse{
-			Response: `{"title":"Задержка доставки заказа","description":"Клиент сообщает, что заказ не доставлен в обещанный срок.","key_points":["Заказ не приехал вовремя","Клиент просит проверить статус"],"suggested_solution":"Проверить статус у логистики и сообщить новый срок доставки.","urgency_reason":"Клиент ждёт заказ сегодня."}`,
+			Response: `{"problem":"Заказ не доставлен в обещанный срок.","context":"Клиент ждет доставку сегодня и просит проверить статус.","action":"Связаться с логистикой и сообщить клиенту новый срок доставки."}`,
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Fatalf("encode response: %v", err)
@@ -67,11 +67,8 @@ func TestGenerateSummaryWithOllama(t *testing.T) {
 		t.Fatalf("GenerateSummary returned error: %v", err)
 	}
 
-	if summary.Title != "Задержка доставки заказа" {
-		t.Fatalf("unexpected title: %q", summary.Title)
-	}
-	if len(summary.KeyPoints) != 2 {
-		t.Fatalf("unexpected key points: %#v", summary.KeyPoints)
+	if !strings.Contains(summary.Description, "Проблема: Заказ не доставлен") {
+		t.Fatalf("unexpected description: %q", summary.Description)
 	}
 	if summary.UrgencyReason == "" {
 		t.Fatal("expected urgency reason")

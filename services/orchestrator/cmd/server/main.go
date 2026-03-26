@@ -70,7 +70,10 @@ func main() {
 	}
 	defer routingClient.Close()
 
-	ticketClient, err := clients.NewTicketClient(cfg.TicketGRPCAddr)
+	ticketClient, err := clients.NewTicketClient(
+		cfg.TicketGRPCAddr,
+		time.Duration(cfg.TicketRPCTimeoutSeconds)*time.Second,
+	)
 	if err != nil {
 		log.Fatalf("Failed to initialize ticket client: %v", err)
 	}

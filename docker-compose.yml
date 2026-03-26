@@ -179,7 +179,7 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/tickets?sslmode=disable
       PYTHON_NER_SERVICE_URL: http://entity_extraction:5001
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-      LLM_REQUEST_TIMEOUT_SECONDS: ${LLM_REQUEST_TIMEOUT_SECONDS:-90}
+      LLM_REQUEST_TIMEOUT_SECONDS: ${LLM_REQUEST_TIMEOUT_SECONDS:-180}
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
       OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.2}
@@ -223,6 +223,7 @@ services:
       TRANSCRIPTION_GRPC_ADDR: transcription:50051
       ROUTING_GRPC_ADDR: router:50052
       TICKET_GRPC_ADDR: ticket_creation:50054
+      TICKET_RPC_TIMEOUT_SECONDS: ${TICKET_RPC_TIMEOUT_SECONDS:-300}
       NOTIFICATION_GRPC_ADDR: notification_sender:50055
       ENTITY_SERVICE_URL: http://entity_extraction:5001
       ROUTING_INTENTS_PATH: /shared-config/routing_intents.json

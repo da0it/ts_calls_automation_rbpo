@@ -13,19 +13,24 @@ import (
 )
 
 type TicketClient struct {
-	conn   *grpc.ClientConn
-	client callprocessingv1.TicketServiceClient
+	conn    *grpc.ClientConn
+	client  callprocessingv1.TicketServiceClient
+	timeout time.Duration
 }
 
-func NewTicketClient(addr string) (*TicketClient, error) {
+func NewTicketClient(addr string, timeout time.Duration) (*TicketClient, error) {
 	conn, err := grpcConnForService(addr, "TICKET_GRPC")
 	if err != nil {
 		return nil, fmt.Errorf("dial ticket grpc: %w", err)
 	}
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
 
 	return &TicketClient{
-		conn:   conn,
-		client: callprocessingv1.NewTicketServiceClient(conn),
+		conn:    conn,
+		client:  callprocessingv1.NewTicketServiceClient(conn),
+		timeout: timeout,
 	}, nil
 }
 
@@ -64,7 +69,7 @@ type CreateTicketResponse struct {
 }
 
 func (c *TicketClient) CreateTicket(transcript *TranscriptionResponse, routing *RoutingResponse, entities *Entities) (*TicketCreated, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
 	pbSegments := make([]*callprocessingv1.Segment, 0, len(transcript.Segments))

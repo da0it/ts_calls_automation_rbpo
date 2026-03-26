@@ -25,6 +25,7 @@ type Config struct {
 	TranscriptionGRPCAddr     string
 	RoutingGRPCAddr           string
 	TicketGRPCAddr            string
+	TicketRPCTimeoutSeconds   int
 	NotificationGRPCAddr      string
 	EntityServiceURL          string
 	RoutingIntentsPath        string
@@ -63,6 +64,7 @@ func Load() *Config {
 		TranscriptionGRPCAddr:     getEnv("TRANSCRIPTION_GRPC_ADDR", "localhost:50051"),
 		RoutingGRPCAddr:           getEnv("ROUTING_GRPC_ADDR", "localhost:50052"),
 		TicketGRPCAddr:            getEnv("TICKET_GRPC_ADDR", "localhost:50054"),
+		TicketRPCTimeoutSeconds:   getEnvInt("TICKET_RPC_TIMEOUT_SECONDS", 300),
 		NotificationGRPCAddr:      getEnv("NOTIFICATION_GRPC_ADDR", "localhost:50055"),
 		EntityServiceURL:          getEnv("ENTITY_SERVICE_URL", "http://localhost:5001"),
 		RoutingIntentsPath:        getEnv("ROUTING_INTENTS_PATH", "../router/configs/intents.json"),
@@ -97,6 +99,7 @@ func Load() *Config {
 	log.Printf("  - Transcription gRPC: %s", cfg.TranscriptionGRPCAddr)
 	log.Printf("  - Routing gRPC: %s", cfg.RoutingGRPCAddr)
 	log.Printf("  - Ticket gRPC: %s", cfg.TicketGRPCAddr)
+	log.Printf("  - Ticket RPC timeout (sec): %d", cfg.TicketRPCTimeoutSeconds)
 	log.Printf("  - Notification gRPC: %s", cfg.NotificationGRPCAddr)
 	log.Printf("  - Entity service URL: %s", cfg.EntityServiceURL)
 	log.Printf("  - Routing intents path: %s", cfg.RoutingIntentsPath)
