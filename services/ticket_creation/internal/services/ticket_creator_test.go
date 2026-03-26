@@ -20,15 +20,26 @@ func TestComposeTicketDescriptionUsesSummary(t *testing.T) {
 	t.Parallel()
 
 	description := composeTicketDescription(&models.TicketSummary{
-		Description:       "Клиент не может войти в личный кабинет после смены пароля.",
-		KeyPoints:         []string{"Сброс пароля не помог", "Ошибка сохраняется"},
-		SuggestedSolution: "Проверить статус учётной записи и принудительно сбросить пароль.",
+		Description: "Проблема: Клиент не может войти в личный кабинет после смены пароля.",
 	})
 
 	if !strings.Contains(description, "Клиент не может войти") {
 		t.Fatalf("description should include summary body: %q", description)
 	}
-	if !strings.Contains(description, "Ключевые моменты:") {
-		t.Fatalf("description should include key points: %q", description)
+}
+
+func TestAppendEntityDetailsAddsExtraInfo(t *testing.T) {
+	t.Parallel()
+
+	description := appendEntityDetails("Проблема: Не удается войти в кабинет.", &models.Entities{
+		Persons: []models.ExtractedEntity{{Value: "Иван Петров"}},
+		Phones:  []models.ExtractedEntity{{Value: "+79991234567"}},
+	})
+
+	if !strings.Contains(description, "Доп. информация:") {
+		t.Fatalf("description should include extra info block: %q", description)
+	}
+	if !strings.Contains(description, "Иван Петров") {
+		t.Fatalf("description should include person name: %q", description)
 	}
 }

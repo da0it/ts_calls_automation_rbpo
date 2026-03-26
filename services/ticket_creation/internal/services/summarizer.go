@@ -119,8 +119,6 @@ type ollamaResponse struct {
 
 type structuredSummaryPayload struct {
 	Problem string `json:"problem"`
-	Context string `json:"context"`
-	Action  string `json:"action"`
 }
 
 func (s *LLMSummarizer) GenerateSummary(
@@ -280,7 +278,7 @@ func parseSummaryJSON(text, intentID, priority string) (*models.TicketSummary, e
 
 	var payload structuredSummaryPayload
 	if err := json.Unmarshal([]byte(jsonStr), &payload); err == nil {
-		if payload.Problem != "" || payload.Context != "" || payload.Action != "" {
+		if payload.Problem != "" {
 			return normalizeSummary(structuredPayloadToSummary(payload), intentID, priority), nil
 		}
 	}
@@ -375,15 +373,9 @@ func collapseWhitespace(value string) string {
 }
 
 func structuredPayloadToSummary(payload structuredSummaryPayload) *models.TicketSummary {
-	lines := make([]string, 0, 3)
+	lines := make([]string, 0, 1)
 	if value := collapseWhitespace(payload.Problem); value != "" {
 		lines = append(lines, "Проблема: "+value)
-	}
-	if value := collapseWhitespace(payload.Context); value != "" {
-		lines = append(lines, "Контекст: "+value)
-	}
-	if value := collapseWhitespace(payload.Action); value != "" {
-		lines = append(lines, "Действие: "+value)
 	}
 
 	return &models.TicketSummary{

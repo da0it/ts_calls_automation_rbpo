@@ -37,7 +37,7 @@ func TestGenerateSummaryWithOllama(t *testing.T) {
 		}
 
 		resp := ollamaResponse{
-			Response: `{"problem":"Заказ не доставлен в обещанный срок.","context":"Клиент ждет доставку сегодня и просит проверить статус.","action":"Связаться с логистикой и сообщить клиенту новый срок доставки."}`,
+			Response: `{"problem":"Заказ не доставлен в обещанный срок."}`,
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			t.Fatalf("encode response: %v", err)

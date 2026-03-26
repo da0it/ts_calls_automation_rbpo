@@ -105,15 +105,7 @@ func (s *TicketCreatorService) buildTicketDraft(
 	// Добавляем извлеченные сущности в описание только если это явно разрешено.
 	description := composeTicketDescription(summary)
 	if s.includePIIInDescription {
-		if len(entities.Persons) > 0 {
-			description += fmt.Sprintf("\n\nКлиент: %s", entities.Persons[0].Value)
-		}
-		if len(entities.Phones) > 0 {
-			description += fmt.Sprintf("\nТелефон: %s", entities.Phones[0].Value)
-		}
-		if len(entities.OrderIDs) > 0 {
-			description += fmt.Sprintf("\nНомер заказа: %s", entities.OrderIDs[0].Value)
-		}
+		description = appendEntityDetails(description, entities)
 	}
 
 	return &models.TicketDraft{
@@ -161,6 +153,38 @@ func buildTicketTitle(intentID string) string {
 		intentID = "общий запрос"
 	}
 	return truncateRunes("Обращение: "+intentID, maxTicketTitleRunes)
+}
+
+func appendEntityDetails(description string, entities *models.Entities) string {
+	if entities == nil {
+		return description
+	}
+
+	items := make([]string, 0, 5)
+	if len(entities.Persons) > 0 {
+		items = append(items, fmt.Sprintf("Имя: %s", entities.Persons[0].Value))
+	}
+	if len(entities.Phones) > 0 {
+		items = append(items, fmt.Sprintf("Телефон: %s", entities.Phones[0].Value))
+	}
+	if len(entities.Emails) > 0 {
+		items = append(items, fmt.Sprintf("Email: %s", entities.Emails[0].Value))
+	}
+	if len(entities.OrderIDs) > 0 {
+		items = append(items, fmt.Sprintf("Номер заказа: %s", entities.OrderIDs[0].Value))
+	}
+	if len(entities.AccountIDs) > 0 {
+		items = append(items, fmt.Sprintf("Аккаунт: %s", entities.AccountIDs[0].Value))
+	}
+	if len(items) == 0 {
+		return description
+	}
+
+	extraInfo := "Доп. информация:\n- " + strings.Join(items, "\n- ")
+	if strings.TrimSpace(description) == "" {
+		return extraInfo
+	}
+	return description + "\n\n" + extraInfo
 }
 
 // GetTicket получает информацию о тикете
