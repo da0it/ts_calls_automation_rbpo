@@ -46,7 +46,6 @@ func TestGenerateSummaryWithOllama(t *testing.T) {
 	defer server.Close()
 
 	summarizer := NewLLMSummarizer(SummarizerConfig{
-		Provider:          "ollama",
 		OllamaBaseURL:     server.URL,
 		OllamaModel:       "qwen2.5:7b",
 		OllamaTemperature: 0.2,
@@ -70,20 +69,17 @@ func TestGenerateSummaryWithOllama(t *testing.T) {
 	if !strings.Contains(summary.Description, "Проблема: Заказ не доставлен") {
 		t.Fatalf("unexpected description: %q", summary.Description)
 	}
-	if summary.UrgencyReason == "" {
-		t.Fatal("expected urgency reason")
-	}
 }
 
-func TestGenerateSummaryFallback(t *testing.T) {
+func TestGenerateSummaryRejectsExternalOllamaURL(t *testing.T) {
 	t.Parallel()
 
 	summarizer := NewLLMSummarizer(SummarizerConfig{
-		Provider:       "fallback",
+		OllamaBaseURL:  "https://example.com",
 		RequestTimeout: 5 * time.Second,
 	})
 
-	summary, err := summarizer.GenerateSummary(
+	_, err := summarizer.GenerateSummary(
 		[]models.Segment{
 			{Role: "client", Text: "Не могу войти в личный кабинет после смены пароля."},
 		},
@@ -91,17 +87,7 @@ func TestGenerateSummaryFallback(t *testing.T) {
 		"critical",
 		nil,
 	)
-	if err != nil {
-		t.Fatalf("GenerateSummary returned error: %v", err)
-	}
-
-	if summary.Title == "" {
-		t.Fatal("expected non-empty title")
-	}
-	if !strings.Contains(summary.Description, "Суть обращения") {
-		t.Fatalf("unexpected description: %q", summary.Description)
-	}
-	if summary.UrgencyReason == "" {
-		t.Fatal("expected urgency reason for critical priority")
+	if err == nil {
+		t.Fatal("expected error for external ollama base URL")
 	}
 }

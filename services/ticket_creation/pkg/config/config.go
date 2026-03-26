@@ -23,14 +23,11 @@ type Config struct {
 	PythonNERServiceURL string
 
 	// LLM
-	LLMProvider              string
 	LLMRequestTimeoutSeconds int
 	OllamaBaseURL            string
 	OllamaModel              string
 	OllamaTemperature        float64
 	OllamaNumPredict         int
-	AnthropicAPIKey          string
-	AnthropicModel           string
 
 	// Ticket systems
 	TicketSystem  string //so, mock
@@ -53,14 +50,11 @@ func Load() *Config {
 		CORSAllowedOrigins:            getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:3000"),
 		DatabaseURL:                   getEnv("DATABASE_URL", "postgres://localhost/tickets?sslmode=disable"),
 		PythonNERServiceURL:           getEnv("PYTHON_NER_SERVICE_URL", "http://localhost:5000"),
-		LLMProvider:                   getEnv("LLM_PROVIDER", "ollama"),
 		LLMRequestTimeoutSeconds:      getEnvInt("LLM_REQUEST_TIMEOUT_SECONDS", 180),
 		OllamaBaseURL:                 getEnv("OLLAMA_BASE_URL", "http://localhost:11434"),
 		OllamaModel:                   getEnv("OLLAMA_MODEL", "qwen2.5:7b"),
 		OllamaTemperature:             getEnvFloat("OLLAMA_TEMPERATURE", 0.2),
 		OllamaNumPredict:              getEnvInt("OLLAMA_NUM_PREDICT", 512),
-		AnthropicAPIKey:               getEnv("ANTHROPIC_API_KEY", ""),
-		AnthropicModel:                getEnv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929"),
 		TicketSystem:                  getEnv("TICKET_SYSTEM", "mock"),
 		TicketIncludePIIInDescription: getEnvBool("TICKET_INCLUDE_PII_IN_DESCRIPTION", false),
 	}

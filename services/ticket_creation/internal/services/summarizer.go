@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -13,9 +14,6 @@ import (
 )
 
 const (
-	anthropicAPIURL       = "https://api.anthropic.com/v1/messages"
-	anthropicAPIVersion   = "2023-06-01"
-	defaultAnthropicModel = "claude-sonnet-4-5-20250929"
 	defaultOllamaBaseURL  = "http://localhost:11434"
 	defaultOllamaModel    = "qwen2.5:7b"
 	defaultRequestTimeout = 60 * time.Second
@@ -32,9 +30,6 @@ type TicketSummarizer interface {
 }
 
 type SummarizerConfig struct {
-	Provider          string
-	AnthropicAPIKey   string
-	AnthropicModel    string
 	OllamaBaseURL     string
 	OllamaModel       string
 	OllamaTemperature float64
@@ -45,57 +40,6 @@ type SummarizerConfig struct {
 type LLMSummarizer struct {
 	config     SummarizerConfig
 	httpClient *http.Client
-}
-
-func NewLLMSummarizer(cfg SummarizerConfig) *LLMSummarizer {
-	if strings.TrimSpace(cfg.Provider) == "" {
-		cfg.Provider = "ollama"
-	}
-	if strings.TrimSpace(cfg.AnthropicModel) == "" {
-		cfg.AnthropicModel = defaultAnthropicModel
-	}
-	if strings.TrimSpace(cfg.OllamaBaseURL) == "" {
-		cfg.OllamaBaseURL = defaultOllamaBaseURL
-	}
-	if strings.TrimSpace(cfg.OllamaModel) == "" {
-		cfg.OllamaModel = defaultOllamaModel
-	}
-	if cfg.RequestTimeout <= 0 {
-		cfg.RequestTimeout = defaultRequestTimeout
-	}
-
-	return &LLMSummarizer{
-		config: cfg,
-		httpClient: &http.Client{
-			Timeout: cfg.RequestTimeout,
-		},
-	}
-}
-
-type anthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system"`
-	Messages  []anthropicMessage `json:"messages"`
-}
-
-type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type anthropicResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-}
-
-type anthropicErrorResponse struct {
-	Error struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
-	} `json:"error"`
 }
 
 type ollamaRequest struct {
@@ -121,25 +65,32 @@ type structuredSummaryPayload struct {
 	Problem string `json:"problem"`
 }
 
+func NewLLMSummarizer(cfg SummarizerConfig) *LLMSummarizer {
+	if strings.TrimSpace(cfg.OllamaBaseURL) == "" {
+		cfg.OllamaBaseURL = defaultOllamaBaseURL
+	}
+	if strings.TrimSpace(cfg.OllamaModel) == "" {
+		cfg.OllamaModel = defaultOllamaModel
+	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = defaultRequestTimeout
+	}
+
+	return &LLMSummarizer{
+		config: cfg,
+		httpClient: &http.Client{
+			Timeout: cfg.RequestTimeout,
+		},
+	}
+}
+
 func (s *LLMSummarizer) GenerateSummary(
 	segments []models.Segment,
 	intentID string,
 	priority string,
 	entities *models.Entities,
 ) (*models.TicketSummary, error) {
-	switch strings.ToLower(strings.TrimSpace(s.config.Provider)) {
-	case "", "ollama":
-		return s.generateWithOllama(segments, intentID, priority, entities)
-	case "anthropic":
-		if strings.TrimSpace(s.config.AnthropicAPIKey) == "" {
-			return nil, fmt.Errorf("anthropic provider selected but ANTHROPIC_API_KEY is empty")
-		}
-		return s.generateWithAnthropic(segments, intentID, priority, entities)
-	case "fallback", "none", "disabled":
-		return s.fallbackSummary(segments, intentID, priority), nil
-	default:
-		return nil, fmt.Errorf("unsupported LLM provider: %s", s.config.Provider)
-	}
+	return s.generateWithOllama(segments, intentID, priority, entities)
 }
 
 func (s *LLMSummarizer) generateWithOllama(
@@ -148,6 +99,10 @@ func (s *LLMSummarizer) generateWithOllama(
 	priority string,
 	entities *models.Entities,
 ) (*models.TicketSummary, error) {
+	if err := validateLocalOllamaBaseURL(s.config.OllamaBaseURL); err != nil {
+		return nil, err
+	}
+
 	transcript := formatTranscript(segments)
 	entitiesInfo := formatEntities(entities)
 
@@ -170,8 +125,8 @@ func (s *LLMSummarizer) generateWithOllama(
 		return nil, fmt.Errorf("marshal ollama request: %w", err)
 	}
 
-	url := strings.TrimRight(s.config.OllamaBaseURL, "/") + "/api/generate"
-	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	endpoint := strings.TrimRight(s.config.OllamaBaseURL, "/") + "/api/generate"
+	httpReq, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create ollama request: %w", err)
 	}
@@ -205,69 +160,6 @@ func (s *LLMSummarizer) generateWithOllama(
 	return parseSummaryJSON(ollamaResp.Response, intentID, priority)
 }
 
-func (s *LLMSummarizer) generateWithAnthropic(
-	segments []models.Segment,
-	intentID string,
-	priority string,
-	entities *models.Entities,
-) (*models.TicketSummary, error) {
-	transcript := formatTranscript(segments)
-	entitiesInfo := formatEntities(entities)
-
-	req := anthropicRequest{
-		Model:     s.config.AnthropicModel,
-		MaxTokens: 1024,
-		System:    ticketSummarySystemPrompt(),
-		Messages: []anthropicMessage{
-			{
-				Role:    "user",
-				Content: buildSummaryUserPrompt(transcript, intentID, priority, entitiesInfo),
-			},
-		},
-	}
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal anthropic request: %w", err)
-	}
-
-	httpReq, err := http.NewRequest(http.MethodPost, anthropicAPIURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create anthropic request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", s.config.AnthropicAPIKey)
-	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
-
-	resp, err := s.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("anthropic request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read anthropic response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		var errResp anthropicErrorResponse
-		if json.Unmarshal(respBody, &errResp) == nil && strings.TrimSpace(errResp.Error.Message) != "" {
-			return nil, fmt.Errorf("anthropic error (%d): %s - %s", resp.StatusCode, errResp.Error.Type, errResp.Error.Message)
-		}
-		return nil, fmt.Errorf("anthropic error (%d): %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-
-	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
-		return nil, fmt.Errorf("decode anthropic response: %w", err)
-	}
-	if len(anthropicResp.Content) == 0 || strings.TrimSpace(anthropicResp.Content[0].Text) == "" {
-		return nil, fmt.Errorf("empty response from anthropic")
-	}
-
-	return parseSummaryJSON(anthropicResp.Content[0].Text, intentID, priority)
-}
-
 func parseSummaryJSON(text, intentID, priority string) (*models.TicketSummary, error) {
 	jsonStr := strings.TrimSpace(text)
 	if start := strings.Index(jsonStr, "{"); start >= 0 {
@@ -277,51 +169,14 @@ func parseSummaryJSON(text, intentID, priority string) (*models.TicketSummary, e
 	}
 
 	var payload structuredSummaryPayload
-	if err := json.Unmarshal([]byte(jsonStr), &payload); err == nil {
-		if payload.Problem != "" {
-			return normalizeSummary(structuredPayloadToSummary(payload), intentID, priority), nil
-		}
-	}
-
-	var summary models.TicketSummary
-	if err := json.Unmarshal([]byte(jsonStr), &summary); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal summary JSON: %w", err)
 	}
-
-	return normalizeSummary(&summary, intentID, priority), nil
-}
-
-func (s *LLMSummarizer) fallbackSummary(
-	segments []models.Segment,
-	intentID string,
-	priority string,
-) *models.TicketSummary {
-	var clientTexts []string
-	for _, seg := range segments {
-		if seg.Role == "client" {
-			clientTexts = append(clientTexts, seg.Text)
-		}
+	if collapseWhitespace(payload.Problem) == "" {
+		return nil, fmt.Errorf("empty problem in summary")
 	}
 
-	title := fmt.Sprintf("Обращение: %s", intentID)
-	if len(clientTexts) > 0 {
-		title = collapseWhitespace(clientTexts[0])
-	}
-
-	descriptionParts := []string{"Автоматически созданный тикет из транскрипции звонка."}
-	if len(clientTexts) > 0 {
-		descriptionParts = append(descriptionParts, fmt.Sprintf("Суть обращения: %s", strings.TrimSpace(clientTexts[0])))
-	}
-
-	summary := &models.TicketSummary{
-		Title:       title,
-		Description: strings.Join(descriptionParts, "\n\n"),
-	}
-	if priority == "high" || priority == "critical" {
-		summary.UrgencyReason = fmt.Sprintf("Приоритет обращения определён как %s.", priority)
-	}
-
-	return normalizeSummary(summary, intentID, priority)
+	return normalizeSummary(structuredPayloadToSummary(payload), intentID, priority), nil
 }
 
 func normalizeSummary(summary *models.TicketSummary, intentID, priority string) *models.TicketSummary {
@@ -337,23 +192,15 @@ func normalizeSummary(summary *models.TicketSummary, intentID, priority string) 
 
 	description := strings.TrimSpace(summary.Description)
 	if description == "" {
-		description = fmt.Sprintf("Автоматически созданный тикет по обращению %s.", collapseWhitespace(intentID))
+		description = fmt.Sprintf("Проблема: Автоматически созданный тикет по обращению %s.", collapseWhitespace(intentID))
 	}
 	summary.Description = description
-
-	cleanKeyPoints := make([]string, 0, len(summary.KeyPoints))
-	for _, point := range summary.KeyPoints {
-		if cleaned := collapseWhitespace(point); cleaned != "" {
-			cleanKeyPoints = append(cleanKeyPoints, cleaned)
-		}
+	summary.KeyPoints = nil
+	summary.SuggestedSolution = ""
+	summary.UrgencyReason = ""
+	if priority == "" {
+		return summary
 	}
-	summary.KeyPoints = cleanKeyPoints
-	summary.SuggestedSolution = strings.TrimSpace(summary.SuggestedSolution)
-	summary.UrgencyReason = strings.TrimSpace(summary.UrgencyReason)
-	if (priority == "high" || priority == "critical") && summary.UrgencyReason == "" {
-		summary.UrgencyReason = fmt.Sprintf("Обращение автоматически отмечено как %s.", priority)
-	}
-
 	return summary
 }
 
@@ -373,13 +220,22 @@ func collapseWhitespace(value string) string {
 }
 
 func structuredPayloadToSummary(payload structuredSummaryPayload) *models.TicketSummary {
-	lines := make([]string, 0, 1)
-	if value := collapseWhitespace(payload.Problem); value != "" {
-		lines = append(lines, "Проблема: "+value)
-	}
-
 	return &models.TicketSummary{
-		Description: strings.Join(lines, "\n"),
+		Description: "Проблема: " + collapseWhitespace(payload.Problem),
+	}
+}
+
+func validateLocalOllamaBaseURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("invalid OLLAMA_BASE_URL: %w", err)
+	}
+	host := strings.ToLower(parsed.Hostname())
+	switch host {
+	case "localhost", "127.0.0.1", "::1", "ollama", "host.docker.internal":
+		return nil
+	default:
+		return fmt.Errorf("OLLAMA_BASE_URL must point to a local endpoint, got %q", raw)
 	}
 }
 

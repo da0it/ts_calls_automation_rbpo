@@ -42,9 +42,6 @@ func main() {
 	// Инициализация клиентов
 	pythonClient := clients.NewPythonClient(cfg.PythonNERServiceURL)
 	summarizer := services.NewLLMSummarizer(services.SummarizerConfig{
-		Provider:          cfg.LLMProvider,
-		AnthropicAPIKey:   cfg.AnthropicAPIKey,
-		AnthropicModel:    cfg.AnthropicModel,
 		OllamaBaseURL:     cfg.OllamaBaseURL,
 		OllamaModel:       cfg.OllamaModel,
 		OllamaTemperature: cfg.OllamaTemperature,

@@ -45,8 +45,8 @@ services:
       GRPC_HOST: 0.0.0.0
       TRANSCRIPTION_GRPC_PORT: 50051
       WHISPERX_VENV_PYTHON: /opt/whisperx_venv/bin/python
-      HF_HUB_OFFLINE: "0"
-      TRANSFORMERS_OFFLINE: "0"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
       FFMPEG_BIN: ffmpeg
       FFPROBE_BIN: ffprobe
     volumes:
@@ -153,21 +153,6 @@ services:
       retries: 12
       start_period: 20s
 
-  ollama-model:
-    image: ollama/ollama
-    profiles: ["ollama-pull"]
-    restart: "no"
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
-    entrypoint: ["/bin/sh", "-lc"]
-    command: >
-      ollama list | grep -q "$${OLLAMA_MODEL}" ||
-      ollama pull "$${OLLAMA_MODEL}"
-
   ticket_creation:
     build:
       context: ./services/ticket_creation
@@ -178,12 +163,11 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/tickets?sslmode=disable
       PYTHON_NER_SERVICE_URL: http://entity_extraction:5001
-      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       LLM_REQUEST_TIMEOUT_SECONDS: ${LLM_REQUEST_TIMEOUT_SECONDS:-180}
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
       OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.2}
-      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-512}
+      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-160}
       GRPC_PORT: 50054
       SERVER_PORT: 8080
     depends_on:
