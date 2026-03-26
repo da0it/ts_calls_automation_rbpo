@@ -117,7 +117,7 @@ func (s *TicketCreatorService) buildTicketDraft(
 	}
 
 	return &models.TicketDraft{
-		Title:            summary.Title,
+		Title:            buildTicketTitle(req.Routing.IntentID),
 		Description:      description,
 		Priority:         req.Routing.Priority,
 		AssigneeType:     assigneeType,
@@ -153,6 +153,14 @@ func composeTicketDescription(summary *models.TicketSummary) string {
 		return "Автоматически созданный тикет из транскрипции звонка."
 	}
 	return strings.Join(sections, "\n\n")
+}
+
+func buildTicketTitle(intentID string) string {
+	intentID = collapseWhitespace(intentID)
+	if intentID == "" {
+		intentID = "общий запрос"
+	}
+	return truncateRunes("Обращение: "+intentID, maxTicketTitleRunes)
 }
 
 // GetTicket получает информацию о тикете
