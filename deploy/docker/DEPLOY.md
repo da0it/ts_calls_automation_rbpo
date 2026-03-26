@@ -20,6 +20,8 @@ Edit these files:
 Important settings:
 
 - `HF_TOKEN` if your WhisperX model download path needs authentication
+- `LLM_PROVIDER=ollama`
+- `OLLAMA_MODEL=qwen2.5:7b`
 
 ## 2. Build
 
@@ -33,11 +35,20 @@ docker compose build
 docker compose up -d
 ```
 
+If you want Docker to download the Ollama model for you once:
+
+```bash
+docker compose --profile ollama-pull up ollama-model
+```
+
+If the host must stay air-gapped, preload/import the model into `ollama` manually and skip the command above.
+
 ## 4. Verify
 
 ```bash
 docker compose ps
 curl http://localhost:8000/health
+curl http://localhost:11434/api/tags
 ```
 
 ## 5. Test call processing

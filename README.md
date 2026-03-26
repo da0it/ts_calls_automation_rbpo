@@ -33,6 +33,10 @@
 - Для админа доступен аудит действий: `GET /api/v1/audit/events` (только admin JWT).
 - В ticket service PII в описание тикета по умолчанию отключены:
   `TICKET_INCLUDE_PII_IN_DESCRIPTION=0`.
+- Генерация заголовка и summary для тикета по умолчанию выполняется локально через `ollama`
+  (`LLM_PROVIDER=ollama`, рекомендованная модель `qwen2.5:7b`).
+- Для полностью локального режима ticket service ходит только в `OLLAMA_BASE_URL`
+  и не отправляет транскрипты во внешние API.
 - В orchestrator/transcription убраны лишние детали из логов (имена файлов/пути временных файлов).
 
 ## Go проверка

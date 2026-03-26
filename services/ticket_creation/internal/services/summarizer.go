@@ -1,4 +1,3 @@
-// internal/services/summarizer.go
 package services
 
 import (
@@ -14,192 +13,274 @@ import (
 )
 
 const (
-	anthropicAPIURL     = "https://api.anthropic.com/v1/messages"
-	anthropicAPIVersion = "2023-06-01"
-	claudeModel         = "claude-sonnet-4-5-20250929"
+	anthropicAPIURL       = "https://api.anthropic.com/v1/messages"
+	anthropicAPIVersion   = "2023-06-01"
+	defaultAnthropicModel = "claude-sonnet-4-5-20250929"
+	defaultOllamaBaseURL  = "http://localhost:11434"
+	defaultOllamaModel    = "qwen2.5:7b"
+	defaultRequestTimeout = 60 * time.Second
+	maxTicketTitleRunes   = 100
 )
 
-type ClaudeSummarizer struct {
-	apiKey     string
+type TicketSummarizer interface {
+	GenerateSummary(
+		segments []models.Segment,
+		intentID string,
+		priority string,
+		entities *models.Entities,
+	) (*models.TicketSummary, error)
+}
+
+type SummarizerConfig struct {
+	Provider          string
+	AnthropicAPIKey   string
+	AnthropicModel    string
+	OllamaBaseURL     string
+	OllamaModel       string
+	OllamaTemperature float64
+	OllamaNumPredict  int
+	RequestTimeout    time.Duration
+}
+
+type LLMSummarizer struct {
+	config     SummarizerConfig
 	httpClient *http.Client
 }
 
-func NewClaudeSummarizer(apiKey string) *ClaudeSummarizer {
-	return &ClaudeSummarizer{
-		apiKey: apiKey,
+func NewLLMSummarizer(cfg SummarizerConfig) *LLMSummarizer {
+	if strings.TrimSpace(cfg.Provider) == "" {
+		cfg.Provider = "ollama"
+	}
+	if strings.TrimSpace(cfg.AnthropicModel) == "" {
+		cfg.AnthropicModel = defaultAnthropicModel
+	}
+	if strings.TrimSpace(cfg.OllamaBaseURL) == "" {
+		cfg.OllamaBaseURL = defaultOllamaBaseURL
+	}
+	if strings.TrimSpace(cfg.OllamaModel) == "" {
+		cfg.OllamaModel = defaultOllamaModel
+	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = defaultRequestTimeout
+	}
+
+	return &LLMSummarizer{
+		config: cfg,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: cfg.RequestTimeout,
 		},
 	}
 }
 
-// claudeRequest описывает запрос к Anthropic Messages API
-type claudeRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	System    string          `json:"system"`
-	Messages  []claudeMessage `json:"messages"`
+type anthropicRequest struct {
+	Model     string             `json:"model"`
+	MaxTokens int                `json:"max_tokens"`
+	System    string             `json:"system"`
+	Messages  []anthropicMessage `json:"messages"`
 }
 
-type claudeMessage struct {
+type anthropicMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-// claudeResponse описывает ответ от Anthropic Messages API
-type claudeResponse struct {
+type anthropicResponse struct {
 	Content []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
-	StopReason string `json:"stop_reason"`
-	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
 }
 
-type claudeErrorResponse struct {
-	Type  string `json:"type"`
+type anthropicErrorResponse struct {
 	Error struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-// GenerateSummary генерирует заголовок и описание тикета через Claude API
-func (s *ClaudeSummarizer) GenerateSummary(
+type ollamaRequest struct {
+	Model   string         `json:"model"`
+	Prompt  string         `json:"prompt"`
+	System  string         `json:"system,omitempty"`
+	Stream  bool           `json:"stream"`
+	Format  string         `json:"format,omitempty"`
+	Options *ollamaOptions `json:"options,omitempty"`
+}
+
+type ollamaOptions struct {
+	Temperature float64 `json:"temperature"`
+	NumPredict  int     `json:"num_predict,omitempty"`
+}
+
+type ollamaResponse struct {
+	Response string `json:"response"`
+	Error    string `json:"error"`
+}
+
+func (s *LLMSummarizer) GenerateSummary(
 	segments []models.Segment,
 	intentID string,
 	priority string,
 	entities *models.Entities,
 ) (*models.TicketSummary, error) {
-	if s.apiKey == "" {
+	switch strings.ToLower(strings.TrimSpace(s.config.Provider)) {
+	case "", "ollama":
+		return s.generateWithOllama(segments, intentID, priority, entities)
+	case "anthropic":
+		if strings.TrimSpace(s.config.AnthropicAPIKey) == "" {
+			return nil, fmt.Errorf("anthropic provider selected but ANTHROPIC_API_KEY is empty")
+		}
+		return s.generateWithAnthropic(segments, intentID, priority, entities)
+	case "fallback", "none", "disabled":
 		return s.fallbackSummary(segments, intentID, priority), nil
+	default:
+		return nil, fmt.Errorf("unsupported LLM provider: %s", s.config.Provider)
 	}
+}
 
+func (s *LLMSummarizer) generateWithOllama(
+	segments []models.Segment,
+	intentID string,
+	priority string,
+	entities *models.Entities,
+) (*models.TicketSummary, error) {
 	transcript := formatTranscript(segments)
 	entitiesInfo := formatEntities(entities)
 
-	systemPrompt := `Ты — ассистент для генерации тикетов в системе поддержки клиентов.
-На вход получаешь транскрипцию звонка, определённый intent и извлечённые сущности.
-Сгенерируй краткий заголовок тикета и структурированное описание.
-
-Ответ верни СТРОГО в JSON формате:
-{
-  "title": "Краткий заголовок тикета (до 100 символов)",
-  "description": "Подробное описание проблемы клиента",
-  "key_points": ["ключевой момент 1", "ключевой момент 2"],
-  "suggested_solution": "Предложение по решению, если очевидно",
-  "urgency_reason": "Причина срочности, если приоритет high/critical"
-}
-
-Правила:
-- Заголовок должен быть кратким и информативным
-- Описание должно содержать суть обращения
-- Используй русский язык
-- Не включай персональные данные клиента в заголовок
-- Если приоритет high или critical, обязательно укажи urgency_reason`
-
-	userMessage := fmt.Sprintf(`Транскрипция звонка:
-%s
-
-Intent: %s
-Приоритет: %s
-
-Извлечённые сущности:
-%s
-
-Сгенерируй тикет в JSON формате.`, transcript, intentID, priority, entitiesInfo)
-
-	req := claudeRequest{
-		Model:     claudeModel,
-		MaxTokens: 1024,
-		System:    systemPrompt,
-		Messages: []claudeMessage{
-			{Role: "user", Content: userMessage},
+	req := ollamaRequest{
+		Model:  s.config.OllamaModel,
+		Prompt: buildSummaryUserPrompt(transcript, intentID, priority, entitiesInfo),
+		System: ticketSummarySystemPrompt(),
+		Stream: false,
+		Format: "json",
+		Options: &ollamaOptions{
+			Temperature: s.config.OllamaTemperature,
 		},
+	}
+	if s.config.OllamaNumPredict > 0 {
+		req.Options.NumPredict = s.config.OllamaNumPredict
 	}
 
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+		return nil, fmt.Errorf("marshal ollama request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", anthropicAPIURL, bytes.NewReader(body))
+	url := strings.TrimRight(s.config.OllamaBaseURL, "/") + "/api/generate"
+	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create ollama request: %w", err)
 	}
-
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", s.apiKey)
-	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
 
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, fmt.Errorf("ollama request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, fmt.Errorf("read ollama response: %w", err)
 	}
-
 	if resp.StatusCode != http.StatusOK {
-		var errResp claudeErrorResponse
-		if json.Unmarshal(respBody, &errResp) == nil {
-			return nil, fmt.Errorf("claude API error (%d): %s - %s",
-				resp.StatusCode, errResp.Error.Type, errResp.Error.Message)
-		}
-		return nil, fmt.Errorf("claude API error (%d): %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("ollama error (%d): %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
-	var claudeResp claudeResponse
-	if err := json.Unmarshal(respBody, &claudeResp); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+	var ollamaResp ollamaResponse
+	if err := json.Unmarshal(respBody, &ollamaResp); err != nil {
+		return nil, fmt.Errorf("decode ollama response: %w", err)
+	}
+	if strings.TrimSpace(ollamaResp.Error) != "" {
+		return nil, fmt.Errorf("ollama error: %s", ollamaResp.Error)
+	}
+	if strings.TrimSpace(ollamaResp.Response) == "" {
+		return nil, fmt.Errorf("empty response from ollama")
 	}
 
-	if len(claudeResp.Content) == 0 {
-		return nil, fmt.Errorf("empty response from Claude API")
-	}
-
-	// Извлекаем текст ответа
-	text := claudeResp.Content[0].Text
-
-	// Парсим JSON из ответа
-	summary, err := parseSummaryJSON(text)
-	if err != nil {
-		return nil, fmt.Errorf("parse summary: %w", err)
-	}
-
-	return summary, nil
+	return parseSummaryJSON(ollamaResp.Response, intentID, priority)
 }
 
-// parseSummaryJSON извлекает и парсит JSON из ответа Claude
-func parseSummaryJSON(text string) (*models.TicketSummary, error) {
-	// Пытаемся найти JSON в ответе (может быть обёрнут в markdown code block)
-	jsonStr := text
-	if idx := strings.Index(text, "{"); idx >= 0 {
-		if endIdx := strings.LastIndex(text, "}"); endIdx > idx {
-			jsonStr = text[idx : endIdx+1]
+func (s *LLMSummarizer) generateWithAnthropic(
+	segments []models.Segment,
+	intentID string,
+	priority string,
+	entities *models.Entities,
+) (*models.TicketSummary, error) {
+	transcript := formatTranscript(segments)
+	entitiesInfo := formatEntities(entities)
+
+	req := anthropicRequest{
+		Model:     s.config.AnthropicModel,
+		MaxTokens: 1024,
+		System:    ticketSummarySystemPrompt(),
+		Messages: []anthropicMessage{
+			{
+				Role:    "user",
+				Content: buildSummaryUserPrompt(transcript, intentID, priority, entitiesInfo),
+			},
+		},
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal anthropic request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest(http.MethodPost, anthropicAPIURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create anthropic request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", s.config.AnthropicAPIKey)
+	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
+
+	resp, err := s.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read anthropic response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		var errResp anthropicErrorResponse
+		if json.Unmarshal(respBody, &errResp) == nil && strings.TrimSpace(errResp.Error.Message) != "" {
+			return nil, fmt.Errorf("anthropic error (%d): %s - %s", resp.StatusCode, errResp.Error.Type, errResp.Error.Message)
+		}
+		return nil, fmt.Errorf("anthropic error (%d): %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var anthropicResp anthropicResponse
+	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
+		return nil, fmt.Errorf("decode anthropic response: %w", err)
+	}
+	if len(anthropicResp.Content) == 0 || strings.TrimSpace(anthropicResp.Content[0].Text) == "" {
+		return nil, fmt.Errorf("empty response from anthropic")
+	}
+
+	return parseSummaryJSON(anthropicResp.Content[0].Text, intentID, priority)
+}
+
+func parseSummaryJSON(text, intentID, priority string) (*models.TicketSummary, error) {
+	jsonStr := strings.TrimSpace(text)
+	if start := strings.Index(jsonStr, "{"); start >= 0 {
+		if end := strings.LastIndex(jsonStr, "}"); end > start {
+			jsonStr = jsonStr[start : end+1]
 		}
 	}
 
 	var summary models.TicketSummary
 	if err := json.Unmarshal([]byte(jsonStr), &summary); err != nil {
-		return nil, fmt.Errorf("unmarshal summary JSON: %w (raw: %s)", err, jsonStr)
+		return nil, fmt.Errorf("unmarshal summary JSON: %w", err)
 	}
 
-	if summary.Title == "" {
-		return nil, fmt.Errorf("empty title in summary")
-	}
-
-	return &summary, nil
+	return normalizeSummary(&summary, intentID, priority), nil
 }
 
-// fallbackSummary генерирует базовое описание без API (когда ключ не задан)
-func (s *ClaudeSummarizer) fallbackSummary(
+func (s *LLMSummarizer) fallbackSummary(
 	segments []models.Segment,
 	intentID string,
 	priority string,
@@ -212,32 +293,108 @@ func (s *ClaudeSummarizer) fallbackSummary(
 	}
 
 	title := fmt.Sprintf("Обращение: %s", intentID)
-	if len(title) > 100 {
-		title = title[:97] + "..."
+	if len(clientTexts) > 0 {
+		title = collapseWhitespace(clientTexts[0])
 	}
 
-	description := "Автоматически созданный тикет из транскрипции звонка.\n\n"
+	descriptionParts := []string{"Автоматически созданный тикет из транскрипции звонка."}
 	if len(clientTexts) > 0 {
-		firstMessage := clientTexts[0]
-		if len(firstMessage) > 200 {
-			firstMessage = firstMessage[:197] + "..."
-		}
-		description += fmt.Sprintf("Первое сообщение клиента: %s", firstMessage)
+		descriptionParts = append(descriptionParts, fmt.Sprintf("Суть обращения: %s", strings.TrimSpace(clientTexts[0])))
 	}
 
 	summary := &models.TicketSummary{
 		Title:       title,
-		Description: description,
+		Description: strings.Join(descriptionParts, "\n\n"),
+	}
+	if priority == "high" || priority == "critical" {
+		summary.UrgencyReason = fmt.Sprintf("Приоритет обращения определён как %s.", priority)
 	}
 
-	if priority == "high" || priority == "critical" {
-		summary.UrgencyReason = fmt.Sprintf("Приоритет: %s", priority)
+	return normalizeSummary(summary, intentID, priority)
+}
+
+func ticketSummarySystemPrompt() string {
+	return `Ты формируешь тикет первой линии поддержки по транскрипции телефонного звонка.
+Верни только JSON-объект без markdown и без пояснений.
+
+Формат ответа:
+{
+  "title": "Краткий заголовок тикета до 100 символов",
+  "description": "Краткое, но полезное описание сути обращения клиента",
+  "key_points": ["ключевой факт 1", "ключевой факт 2"],
+  "suggested_solution": "Что стоит сделать оператору или второй линии, если это очевидно",
+  "urgency_reason": "Почему обращение срочное, если приоритет high или critical"
+}
+
+Правила:
+- Пиши по-русски.
+- Не добавляй в title персональные данные.
+- Не выдумывай факты, которых нет в транскрипции.
+- Если suggested_solution или urgency_reason не нужны, верни пустую строку.
+- key_points верни массивом из 2-5 коротких пунктов.`
+}
+
+func buildSummaryUserPrompt(transcript, intentID, priority, entitiesInfo string) string {
+	return fmt.Sprintf(`Транскрипция звонка:
+%s
+
+Intent: %s
+Приоритет: %s
+
+Извлечённые сущности:
+%s
+
+Сгенерируй JSON по заданному формату.`, transcript, intentID, priority, entitiesInfo)
+}
+
+func normalizeSummary(summary *models.TicketSummary, intentID, priority string) *models.TicketSummary {
+	if summary == nil {
+		summary = &models.TicketSummary{}
+	}
+
+	title := collapseWhitespace(summary.Title)
+	if title == "" {
+		title = fmt.Sprintf("Обращение: %s", collapseWhitespace(intentID))
+	}
+	summary.Title = truncateRunes(title, maxTicketTitleRunes)
+
+	description := strings.TrimSpace(summary.Description)
+	if description == "" {
+		description = fmt.Sprintf("Автоматически созданный тикет по обращению %s.", collapseWhitespace(intentID))
+	}
+	summary.Description = description
+
+	cleanKeyPoints := make([]string, 0, len(summary.KeyPoints))
+	for _, point := range summary.KeyPoints {
+		if cleaned := collapseWhitespace(point); cleaned != "" {
+			cleanKeyPoints = append(cleanKeyPoints, cleaned)
+		}
+	}
+	summary.KeyPoints = cleanKeyPoints
+	summary.SuggestedSolution = strings.TrimSpace(summary.SuggestedSolution)
+	summary.UrgencyReason = strings.TrimSpace(summary.UrgencyReason)
+	if (priority == "high" || priority == "critical") && summary.UrgencyReason == "" {
+		summary.UrgencyReason = fmt.Sprintf("Обращение автоматически отмечено как %s.", priority)
 	}
 
 	return summary
 }
 
-// formatTranscript форматирует сегменты в читаемый текст
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 3 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-3]) + "..."
+}
+
+func collapseWhitespace(value string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+}
+
 func formatTranscript(segments []models.Segment) string {
 	var sb strings.Builder
 	for _, seg := range segments {
@@ -250,7 +407,6 @@ func formatTranscript(segments []models.Segment) string {
 	return sb.String()
 }
 
-// formatEntities форматирует сущности в читаемый текст
 func formatEntities(entities *models.Entities) string {
 	if entities == nil {
 		return "Не извлечены"

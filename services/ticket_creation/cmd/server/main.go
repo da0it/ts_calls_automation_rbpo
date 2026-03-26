@@ -41,7 +41,16 @@ func main() {
 
 	// Инициализация клиентов
 	pythonClient := clients.NewPythonClient(cfg.PythonNERServiceURL)
-	summarizer := services.NewClaudeSummarizer(cfg.AnthropicAPIKey)
+	summarizer := services.NewLLMSummarizer(services.SummarizerConfig{
+		Provider:          cfg.LLMProvider,
+		AnthropicAPIKey:   cfg.AnthropicAPIKey,
+		AnthropicModel:    cfg.AnthropicModel,
+		OllamaBaseURL:     cfg.OllamaBaseURL,
+		OllamaModel:       cfg.OllamaModel,
+		OllamaTemperature: cfg.OllamaTemperature,
+		OllamaNumPredict:  cfg.OllamaNumPredict,
+		RequestTimeout:    time.Duration(cfg.LLMRequestTimeoutSeconds) * time.Second,
+	})
 
 	// Выбор адаптера тикет-системы
 	var ticketAdapter adapters.TicketSystemAdapter

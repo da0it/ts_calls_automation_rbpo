@@ -4,6 +4,7 @@ package services
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"ticket_module/internal/adapters"
 	"ticket_module/internal/clients"
@@ -13,7 +14,7 @@ import (
 
 type TicketCreatorService struct {
 	pythonClient            *clients.PythonClient
-	summarizer              *ClaudeSummarizer
+	summarizer              TicketSummarizer
 	ticketAdapter           adapters.TicketSystemAdapter
 	repository              *database.TicketRepository
 	includePIIInDescription bool
@@ -21,7 +22,7 @@ type TicketCreatorService struct {
 
 func NewTicketCreatorService(
 	pythonClient *clients.PythonClient,
-	summarizer *ClaudeSummarizer,
+	summarizer TicketSummarizer,
 	ticketAdapter adapters.TicketSystemAdapter,
 	repository *database.TicketRepository,
 	includePIIInDescription bool,
@@ -49,7 +50,7 @@ func (s *TicketCreatorService) CreateTicket(req *models.CreateTicketRequest) (*m
 	log.Printf("Extracted entities: %d persons, %d phones, %d emails",
 		len(entities.Persons), len(entities.Phones), len(entities.Emails))
 
-	// 2. Генерируем заголовок и описание через Claude API
+	// 2. Генерируем заголовок и описание через LLM
 	summary, err := s.summarizer.GenerateSummary(
 		req.Transcript.Segments,
 		req.Routing.IntentID,
@@ -102,7 +103,7 @@ func (s *TicketCreatorService) buildTicketDraft(
 	}
 
 	// Добавляем извлеченные сущности в описание только если это явно разрешено.
-	description := summary.Description
+	description := composeTicketDescription(summary)
 	if s.includePIIInDescription {
 		if len(entities.Persons) > 0 {
 			description += fmt.Sprintf("\n\nКлиент: %s", entities.Persons[0].Value)
@@ -128,6 +129,30 @@ func (s *TicketCreatorService) buildTicketDraft(
 		IntentConfidence: req.Routing.IntentConfidence,
 		Entities:         entities,
 	}
+}
+
+func composeTicketDescription(summary *models.TicketSummary) string {
+	if summary == nil {
+		return "Автоматически созданный тикет из транскрипции звонка."
+	}
+
+	sections := make([]string, 0, 4)
+	if description := strings.TrimSpace(summary.Description); description != "" {
+		sections = append(sections, description)
+	}
+	if len(summary.KeyPoints) > 0 {
+		sections = append(sections, "Ключевые моменты:\n- "+strings.Join(summary.KeyPoints, "\n- "))
+	}
+	if suggestedSolution := strings.TrimSpace(summary.SuggestedSolution); suggestedSolution != "" {
+		sections = append(sections, "Предлагаемое решение:\n"+suggestedSolution)
+	}
+	if urgencyReason := strings.TrimSpace(summary.UrgencyReason); urgencyReason != "" {
+		sections = append(sections, "Причина срочности:\n"+urgencyReason)
+	}
+	if len(sections) == 0 {
+		return "Автоматически созданный тикет из транскрипции звонка."
+	}
+	return strings.Join(sections, "\n\n")
 }
 
 // GetTicket получает информацию о тикете
