@@ -23,6 +23,30 @@ python3 scripts/evaluate_calls_folder.py \
 
 This produces `results.csv`, `results.jsonl`, `summary.json` and can be used as a functional smoke check for the full pipeline.
 
+If you already have a labeled CSV with file paths, intents and spam labels, you can pass it into the batch evaluation:
+
+```bash
+python3 scripts/evaluate_calls_folder.py \
+  --base-url http://localhost:8000 \
+  --username admin \
+  --password 'YOUR_PASSWORD' \
+  --input-dir /absolute/path/to/audio \
+  --labels-csv /absolute/path/to/real_mixed_eval.csv \
+  --labels-path-col source_file \
+  --labels-intent-col call_purpose \
+  --labels-spam-col manual_is_spam
+```
+
+The resulting `results.csv` will include:
+
+- `status`
+- `spam_status`
+- `spam_predicted_label`
+- `spam_confidence`
+- `manual_is_spam`
+- `true_intent`
+- `pred_intent`
+
 ## 2. Classification quality
 
 After manual labeling of routing results, run:
@@ -33,6 +57,17 @@ python3 scripts/evaluate_routing_csv.py \
 ```
 
 The script computes `accuracy`, `macro_precision`, `macro_recall`, `macro_f1`, `weighted_f1` for `intent`, `group` and `priority`.
+
+If your CSV contains only intent labels such as `call_purpose` plus model output `pred_intent`, that is also supported now:
+
+```bash
+python3 scripts/evaluate_routing_csv.py \
+  --csv /absolute/path/to/results.csv \
+  --intent-true-col true_intent \
+  --intent-pred-col pred_intent
+```
+
+When `group` or `priority` columns are missing, the script skips those metrics automatically.
 
 ## 3. Transcription quality
 

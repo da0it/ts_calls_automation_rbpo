@@ -127,17 +127,32 @@ def _infer_true_intent(file_path: Path, input_dir: Path, label_mode: str) -> str
     return ""
 
 
-def _load_labels_csv(path: Path, path_col: str, label_col: str) -> Dict[str, str]:
-    out: Dict[str, str] = {}
+def _load_labels_csv(path: Path, path_col: str, label_cols: Dict[str, str]) -> Dict[str, Dict[str, str]]:
+    out: Dict[str, Dict[str, str]] = {}
     with path.open("r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
-        if path_col not in (reader.fieldnames or []) or label_col not in (reader.fieldnames or []):
-            raise RuntimeError(f"labels csv must contain columns {path_col!r} and {label_col!r}")
+        headers = list(reader.fieldnames or [])
+        if path_col not in headers:
+            raise RuntimeError(f"labels csv must contain path column {path_col!r}")
+        resolved_label_cols = {
+            target_key: column_name
+            for target_key, column_name in label_cols.items()
+            if column_name and column_name in headers
+        }
+        if not resolved_label_cols:
+            requested = [repr(name) for name in label_cols.values() if name]
+            raise RuntimeError(
+                "labels csv does not contain any of the requested label columns: "
+                + ", ".join(requested)
+            )
         for row in reader:
             key = str(row.get(path_col) or "").strip()
-            value = str(row.get(label_col) or "").strip()
-            if key and value:
-                out[key] = value
+            if not key:
+                continue
+            item: Dict[str, str] = {}
+            for target_key, column_name in resolved_label_cols.items():
+                item[target_key] = str(row.get(column_name) or "").strip()
+            out[key] = item
     return out
 
 
@@ -159,6 +174,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--labels-csv", default="", help="Optional CSV with true labels.")
     parser.add_argument("--labels-path-col", default="path", help="Column in labels CSV with relative file path.")
     parser.add_argument("--labels-intent-col", default="intent_id", help="Column in labels CSV with true intent.")
+    parser.add_argument("--labels-spam-col", default="", help="Optional column in labels CSV with manual spam flag.")
     parser.add_argument("--stop-on-error", action="store_true", help="Stop on first failed file.")
     return parser.parse_args()
 
@@ -186,12 +202,15 @@ def main() -> int:
         print(f"[WARN] no audio files found in {input_dir} with extensions {exts}")
         return 0
 
-    labels_map: Dict[str, str] = {}
+    labels_map: Dict[str, Dict[str, str]] = {}
     if args.labels_csv:
         labels_map = _load_labels_csv(
             Path(args.labels_csv).expanduser().resolve(),
             path_col=str(args.labels_path_col),
-            label_col=str(args.labels_intent_col),
+            label_cols={
+                "true_intent": str(args.labels_intent_col or "").strip(),
+                "manual_is_spam": str(args.labels_spam_col or "").strip(),
+            },
         )
 
     token = str(args.token or "").strip()
@@ -221,7 +240,9 @@ def main() -> int:
     for idx, path in enumerate(files, start=1):
         rel = path.relative_to(input_dir)
         rel_str = rel.as_posix()
-        true_intent = labels_map.get(rel_str, "") or _infer_true_intent(path, input_dir, str(args.label_mode))
+        label_item = labels_map.get(rel_str, {})
+        true_intent = str(label_item.get("true_intent") or "") or _infer_true_intent(path, input_dir, str(args.label_mode))
+        manual_is_spam = str(label_item.get("manual_is_spam") or "").strip()
         print(f"[{idx}/{len(files)}] {rel_str}")
         try:
             payload = _http_multipart_json(
@@ -233,6 +254,7 @@ def main() -> int:
             )
             transcript = payload.get("transcript") if isinstance(payload.get("transcript"), dict) else {}
             routing = payload.get("routing") if isinstance(payload.get("routing"), dict) else {}
+            spam_check = payload.get("spam_check") if isinstance(payload.get("spam_check"), dict) else {}
             processing_time = payload.get("processing_time") if isinstance(payload.get("processing_time"), dict) else {}
 
             segments = [seg for seg in (transcript.get("segments") or []) if isinstance(seg, dict)]
@@ -242,10 +264,16 @@ def main() -> int:
                 "source_file": rel_str,
                 "filename": path.name,
                 "true_intent": true_intent,
+                "manual_is_spam": manual_is_spam,
+                "status": str(payload.get("status") or ""),
                 "pred_intent": pred_intent,
                 "confidence": round(confidence, 6),
                 "priority": str(routing.get("priority") or ""),
                 "suggested_group": str(routing.get("suggested_group") or ""),
+                "spam_status": str(spam_check.get("status") or ""),
+                "spam_predicted_label": str(spam_check.get("predicted_label") or ""),
+                "spam_confidence": round(_safe_float(spam_check.get("confidence")), 6),
+                "spam_reason": str(spam_check.get("reason") or ""),
                 "is_triage": int(pred_intent == "misc.triage"),
                 "is_zero_confidence": int(confidence == 0.0),
                 "is_correct": "",
@@ -279,10 +307,16 @@ def main() -> int:
         "source_file",
         "filename",
         "true_intent",
+        "manual_is_spam",
+        "status",
         "pred_intent",
         "confidence",
         "priority",
         "suggested_group",
+        "spam_status",
+        "spam_predicted_label",
+        "spam_confidence",
+        "spam_reason",
         "is_triage",
         "is_zero_confidence",
         "is_correct",
@@ -313,6 +347,15 @@ def main() -> int:
     zero_count = sum(int(row["is_zero_confidence"]) for row in rows)
     labeled_rows = [row for row in rows if str(row.get("true_intent") or "").strip()]
     correct_count = sum(int(row.get("is_correct") or 0) for row in labeled_rows)
+    manual_spam_rows = [row for row in rows if str(row.get("manual_is_spam") or "").strip() != ""]
+
+    status_counts: Counter[str] = Counter(str(row.get("status") or "").strip() or "unknown" for row in rows)
+    spam_status_counts: Counter[str] = Counter(str(row.get("spam_status") or "").strip() or "unknown" for row in rows)
+    spam_confusion: Dict[str, Counter[str]] = defaultdict(Counter)
+    for row in manual_spam_rows:
+        true_label = "spam" if str(row.get("manual_is_spam") or "").strip() in {"1", "true", "yes", "spam"} else "not_spam"
+        pred_status = str(row.get("spam_status") or "").strip() or "unknown"
+        spam_confusion[true_label][pred_status] += 1
 
     confidence_bands = {
         "lt_0_35": sum(1 for value in confidences if value < 0.35),
@@ -327,11 +370,15 @@ def main() -> int:
         "processed_ok": len(rows),
         "failed": len(failures),
         "labeled_files": len(labeled_rows),
+        "spam_labeled_files": len(manual_spam_rows),
         "accuracy": round(correct_count / len(labeled_rows), 4) if labeled_rows else None,
         "triage_rate": round(triage_count / len(rows), 4) if rows else None,
         "zero_confidence_rate": round(zero_count / len(rows), 4) if rows else None,
         "avg_confidence": round(sum(confidences) / len(confidences), 4) if confidences else None,
         "confidence_bands": confidence_bands,
+        "status_counts": dict(sorted(status_counts.items())),
+        "spam_status_counts": dict(sorted(spam_status_counts.items())),
+        "spam_confusion": {key: dict(sorted(value.items())) for key, value in sorted(spam_confusion.items())},
         "predicted_intents": dict(sorted(pred_counter.items())),
         "true_intents": dict(sorted(true_counter.items())),
         "confusion": {key: dict(sorted(value.items())) for key, value in sorted(confusion.items())},

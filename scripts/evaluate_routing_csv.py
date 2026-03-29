@@ -161,49 +161,44 @@ def main() -> int:
         print(f"[ERROR] csv is empty: {csv_path}")
         return 2
 
-    intent_true_col = _pick_column(headers, args.intent_true_col, ["final_intent_id", "intent_id"])
-    intent_pred_col = _pick_column(headers, args.intent_pred_col, ["ai_intent_id", "pred_intent_id", "intent_id"])
+    intent_true_col = _pick_column(headers, args.intent_true_col, ["final_intent_id", "call_purpose", "true_intent", "intent_id"])
+    intent_pred_col = _pick_column(headers, args.intent_pred_col, ["ai_intent_id", "pred_intent", "pred_intent_id", "intent_id"])
     group_true_col = _pick_column(headers, args.group_true_col, ["final_group_id", "final_group", "group_id"])
     group_pred_col = _pick_column(headers, args.group_pred_col, ["ai_group_id", "pred_group_id", "suggested_group"])
     priority_true_col = _pick_column(headers, args.priority_true_col, ["final_priority", "priority"])
     priority_pred_col = _pick_column(headers, args.priority_pred_col, ["ai_priority", "pred_priority", "priority"])
 
-    missing = [
-        name
-        for name, val in {
-            "intent_true_col": intent_true_col,
-            "intent_pred_col": intent_pred_col,
-            "group_true_col": group_true_col,
-            "group_pred_col": group_pred_col,
-            "priority_true_col": priority_true_col,
-            "priority_pred_col": priority_pred_col,
-        }.items()
-        if not val
-    ]
-    if missing:
-        print("[ERROR] missing required columns:", ", ".join(missing))
+    if not intent_true_col or not intent_pred_col:
+        print("[ERROR] missing required intent columns")
         print("headers:", ", ".join(headers))
         return 2
 
     it_y, ip_y, i_skip = _build_pairs(rows, intent_true_col, intent_pred_col)
-    gt_y, gp_y, g_skip = _build_pairs(rows, group_true_col, group_pred_col)
-    pt_y, pp_y, p_skip = _build_pairs(rows, priority_true_col, priority_pred_col)
-
     intent_metrics = _task_metrics(it_y, ip_y)
-    group_metrics = _task_metrics(gt_y, gp_y)
-    priority_metrics = _task_metrics(pt_y, pp_y)
 
     _print_task("Intent", intent_metrics, i_skip, intent_true_col, intent_pred_col)
-    _print_task("Group", group_metrics, g_skip, group_true_col, group_pred_col)
-    _print_task("Priority", priority_metrics, p_skip, priority_true_col, priority_pred_col)
 
     report = {
         "csv": str(csv_path),
         "rows_total": len(rows),
         "intent": {"true_col": intent_true_col, "pred_col": intent_pred_col, "skipped_unlabeled": i_skip, **intent_metrics},
-        "group": {"true_col": group_true_col, "pred_col": group_pred_col, "skipped_unlabeled": g_skip, **group_metrics},
-        "priority": {"true_col": priority_true_col, "pred_col": priority_pred_col, "skipped_unlabeled": p_skip, **priority_metrics},
     }
+
+    if group_true_col and group_pred_col:
+        gt_y, gp_y, g_skip = _build_pairs(rows, group_true_col, group_pred_col)
+        group_metrics = _task_metrics(gt_y, gp_y)
+        _print_task("Group", group_metrics, g_skip, group_true_col, group_pred_col)
+        report["group"] = {"true_col": group_true_col, "pred_col": group_pred_col, "skipped_unlabeled": g_skip, **group_metrics}
+    else:
+        print("\n[INFO] group columns not found, skipping group metrics")
+
+    if priority_true_col and priority_pred_col:
+        pt_y, pp_y, p_skip = _build_pairs(rows, priority_true_col, priority_pred_col)
+        priority_metrics = _task_metrics(pt_y, pp_y)
+        _print_task("Priority", priority_metrics, p_skip, priority_true_col, priority_pred_col)
+        report["priority"] = {"true_col": priority_true_col, "pred_col": priority_pred_col, "skipped_unlabeled": p_skip, **priority_metrics}
+    else:
+        print("[INFO] priority columns not found, skipping priority metrics")
 
     out_json = Path(args.out_json).expanduser().resolve() if args.out_json else (csv_path.parent / "routing_metrics.json")
     out_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -213,4 +208,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

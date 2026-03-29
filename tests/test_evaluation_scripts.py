@@ -68,6 +68,27 @@ class EvaluationScriptsTest(unittest.TestCase):
             self.assertAlmostEqual(report["group"]["accuracy"], 1.0, places=6)
             self.assertAlmostEqual(report["priority"]["accuracy"], 0.666667, places=6)
 
+    def test_evaluate_routing_csv_supports_intent_only_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = Path(tmpdir) / "routing_intent_only.csv"
+            rows = [
+                {"call_purpose": "billing", "pred_intent": "billing"},
+                {"call_purpose": "delivery", "pred_intent": "billing"},
+            ]
+            with csv_path.open("w", encoding="utf-8", newline="") as file:
+                writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
+                writer.writeheader()
+                writer.writerows(rows)
+
+            result = self._run_script("evaluate_routing_csv.py", "--csv", str(csv_path))
+            self.assertIn("== Intent ==", result.stdout)
+            self.assertIn("skipping group metrics", result.stdout)
+
+            report = json.loads((Path(tmpdir) / "routing_metrics.json").read_text(encoding="utf-8"))
+            self.assertAlmostEqual(report["intent"]["accuracy"], 0.5, places=6)
+            self.assertNotIn("group", report)
+            self.assertNotIn("priority", report)
+
     def test_evaluate_transcription_wer_reports_word_and_char_error_rates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             csv_path = Path(tmpdir) / "transcription.csv"
