@@ -119,8 +119,13 @@ def _make_request(
         method="POST",
     )
 
+    # Do not inherit system HTTP(S) proxies for local Ollama checks. On some
+    # hosts a corporate/user proxy turns direct Docker-network requests into
+    # misleading 502 responses.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
     started = time.perf_counter()
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with opener.open(request, timeout=timeout) as response:
         body = response.read().decode("utf-8")
         status = response.status
     elapsed = time.perf_counter() - started
