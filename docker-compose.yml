@@ -79,13 +79,14 @@ services:
       ROUTER_GRPC_PORT: 50052
       ROUTER_INTENTS_PATH: /shared-config/routing_intents.json
       ROUTER_FEEDBACK_PATH: /shared-config/routing_feedback.jsonl
-      ROUTER_TUNED_MODEL_PATH: /shared-config/router_tuned_head.pt
+      ROUTER_TUNED_MODEL_PATH: /shared-config/router_tuned_head_ruroberta_large.pt
       ROUTER_ADMIN_PORT: 8082
+      ROUTER_MODEL_NAME: ai-forever/ruRoberta-large
       ROUTER_FINETUNED_ENABLED: "1"
-      ROUTER_FINETUNED_MODEL_PATH: /shared-config/router_finetuned_model
+      ROUTER_FINETUNED_MODEL_PATH: /shared-config/router_finetuned_model_ruroberta_large
       ROUTER_FINETUNED_LR: 2e-5
       ROUTER_FINETUNED_EPOCHS: 3
-      ROUTER_FINETUNED_BATCH_SIZE: 16
+      ROUTER_FINETUNED_BATCH_SIZE: 8
       ROUTER_FINETUNED_MAX_LENGTH: 256
       ROUTER_FINETUNED_WEIGHT_DECAY: 0.01
       ROUTER_NLP_BACKEND: none
@@ -100,7 +101,7 @@ services:
       ROUTER_SPAM_GATE_SCORE_ALLOW_THRESHOLD: ""
       ROUTER_SPAM_GATE_POSITIVE_LABEL: spam
       ROUTER_TRAIN_EPOCHS: 3
-      ROUTER_TRAIN_BATCH_SIZE: 16
+      ROUTER_TRAIN_BATCH_SIZE: 8
       ROUTER_TRAIN_LR: 2e-5
       ROUTER_TRAIN_VAL_RATIO: 0.2
       ROUTER_TRAIN_SEED: 42
