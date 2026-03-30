@@ -611,12 +611,10 @@
         { id: 'marketing_department', title: 'Маркетинг и партнерства', description: 'Маркетинговые инициативы и запросы на сотрудничество.' }
       ],
       intents: [
-        { id: 'consulting', title: 'Консультация', default_group: 'sales_department', priority: 'medium', examples: ['нужна консультация'] },
-        { id: 'cooperation', title: 'Сотрудничество', default_group: 'marketing_department', priority: 'medium', examples: ['интересует сотрудничество'] },
+        { id: 'consulting', title: 'Консультация', default_group: 'sales_department', priority: 'medium', examples: ['нужна консультация', 'ситуация критическая'] },
+        { id: 'cooperation', title: 'Сотрудничество', default_group: 'marketing_department', priority: 'medium', examples: ['интересует сотрудничество', 'есть маркетинговое предложение'] },
         { id: 'courses', title: 'Курсы и обучение', default_group: 'training_department', priority: 'medium', examples: ['хочу записаться на курс'] },
-        { id: 'escalation', title: 'Эскалация', default_group: 'technical_support', priority: 'high', examples: ['ситуация критическая'] },
         { id: 'license', title: 'Лицензия', default_group: 'sales_department', priority: 'high', examples: ['хочу купить лицензию'] },
-        { id: 'marketing', title: 'Маркетинг', default_group: 'marketing_department', priority: 'medium', examples: ['есть маркетинговое предложение'] },
         { id: 'misc.triage', title: 'Неопределенное обращение', default_group: 'technical_support', priority: 'medium', examples: ['есть вопрос'] },
         { id: 'portal_access', title: 'Доступ в портал', default_group: 'technical_support', priority: 'high', examples: ['не могу войти в портал'] },
         { id: 'spam', title: 'Спам', default_group: 'technical_support', priority: 'high', examples: ['это спам'] }
@@ -1476,7 +1474,7 @@
                 </div>
                 <div class="row">
                   <label>Tags (comma-separated)</label>
-                  <input id="add-intent-tags" placeholder="conference, marketing" />
+                  <input id="add-intent-tags" placeholder="partner, consulting" />
                 </div>
                 <div class="toolbar">
                   <button class="btn btn-primary btn-mini" type="submit">Create Intent</button>
