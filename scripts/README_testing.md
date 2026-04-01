@@ -108,25 +108,6 @@ The report contains per-group averages plus reductions between control (`A`) and
 
 ## 5. Load testing
 
-Use k6 against the authenticated `/api/v1/process-call` endpoint:
-
-```bash
-BASE_URL=http://localhost:8000 \
-USERNAME=admin \
-PASSWORD='YOUR_PASSWORD' \
-AUDIO_FILES=/absolute/path/to/call1.wav,/absolute/path/to/call2.wav \
-k6 run scripts/load_test_process_call.js
-```
-
-The default scenario ramps load up, keeps a short soak period and checks:
-
-- failed request rate
-- average latency
-- 95th percentile latency
-- response integrity (`transcript` and `routing` present)
-
-You can override stage parameters through environment variables such as `TARGET_VUS_1`, `TARGET_VUS_2`, `SOAK`, `RAMP_DOWN`.
-
 ### 5.1 Advanced load testing with pipeline-stage metrics
 
 For diploma-grade measurements, use the advanced script:
