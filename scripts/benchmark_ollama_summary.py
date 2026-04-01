@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -182,6 +183,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-json",
         help="Optional path to save raw benchmark results.",
+    )
+    parser.add_argument(
+        "--markdown-report",
+        help="Optional path to save a Markdown benchmark report.",
+    )
+    parser.add_argument(
+        "--report-title",
+        default="Ollama Summary Benchmark Report",
+        help="Title for the optional Markdown report.",
     )
     return parser.parse_args()
 
@@ -673,11 +683,33 @@ def _format_float(value: float | None, precision: int = 3) -> str:
     return f"{value:.{precision}f}"
 
 
-def print_summary_by_model(results: list[RunResult]) -> None:
+def summarize_by_model(results: list[RunResult]) -> list[dict[str, Any]]:
     grouped: dict[str, list[RunResult]] = {}
     for result in results:
         grouped.setdefault(result.model, []).append(result)
 
+    rows: list[dict[str, Any]] = []
+    for model, items in sorted(grouped.items()):
+        ok_count = sum(1 for item in items if item.success)
+        json_ok = sum(1 for item in items if item.valid_json)
+        problem_ok = sum(1 for item in items if item.non_empty_problem)
+        rows.append(
+            {
+                "model": model,
+                "runs": len(items),
+                "ok": ok_count,
+                "wall_avg_s": _safe_mean([item.wall_clock_sec for item in items]),
+                "tok_s_avg": _safe_mean([item.eval_tokens_per_sec for item in items]),
+                "complete_avg": _safe_mean([item.completeness_score for item in items]),
+                "json_ok": f"{json_ok}/{len(items)}",
+                "problem_ok": f"{problem_ok}/{len(items)}",
+            }
+        )
+    return rows
+
+
+def print_summary_by_model(results: list[RunResult]) -> None:
+    rows = summarize_by_model(results)
     print("\nOverall summary by model:")
     print(
         "model".ljust(20),
@@ -689,27 +721,43 @@ def print_summary_by_model(results: list[RunResult]) -> None:
         "json_ok".rjust(8),
         "problem_ok".rjust(11),
     )
-    for model, items in grouped.items():
-        ok_count = sum(1 for item in items if item.success)
-        json_ok = sum(1 for item in items if item.valid_json)
-        problem_ok = sum(1 for item in items if item.non_empty_problem)
+    for row in rows:
         print(
-            model.ljust(20),
-            str(len(items)).rjust(4),
-            str(ok_count).rjust(4),
-            _format_float(_safe_mean([item.wall_clock_sec for item in items])).rjust(12),
-            _format_float(_safe_mean([item.eval_tokens_per_sec for item in items]), 2).rjust(11),
-            _format_float(_safe_mean([item.completeness_score for item in items])).rjust(13),
-            f"{json_ok}/{len(items)}".rjust(8),
-            f"{problem_ok}/{len(items)}".rjust(11),
+            row["model"].ljust(20),
+            str(row["runs"]).rjust(4),
+            str(row["ok"]).rjust(4),
+            _format_float(row["wall_avg_s"]).rjust(12),
+            _format_float(row["tok_s_avg"], 2).rjust(11),
+            _format_float(row["complete_avg"]).rjust(13),
+            str(row["json_ok"]).rjust(8),
+            str(row["problem_ok"]).rjust(11),
         )
 
 
-def print_summary_by_case(results: list[RunResult]) -> None:
+def summarize_by_case(results: list[RunResult]) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str], list[RunResult]] = {}
     for result in results:
         grouped.setdefault((result.model, result.case_id), []).append(result)
 
+    rows: list[dict[str, Any]] = []
+    for (model, case_id), items in sorted(grouped.items()):
+        size = items[0].case_size
+        rows.append(
+            {
+                "model": model,
+                "case": case_id,
+                "size": size,
+                "wall_avg_s": _safe_mean([item.wall_clock_sec for item in items]),
+                "tok_s_avg": _safe_mean([item.eval_tokens_per_sec for item in items]),
+                "coverage": _safe_mean([item.keyword_coverage for item in items]),
+                "complete": _safe_mean([item.completeness_score for item in items]),
+            }
+        )
+    return rows
+
+
+def print_summary_by_case(results: list[RunResult]) -> None:
+    rows = summarize_by_case(results)
     print("\nSummary by model and case:")
     print(
         "model".ljust(20),
@@ -720,16 +768,15 @@ def print_summary_by_case(results: list[RunResult]) -> None:
         "coverage".rjust(10),
         "complete".rjust(10),
     )
-    for (model, case_id), items in sorted(grouped.items()):
-        size = items[0].case_size
+    for row in rows:
         print(
-            model.ljust(20),
-            case_id.ljust(10),
-            size.ljust(8),
-            _format_float(_safe_mean([item.wall_clock_sec for item in items])).rjust(12),
-            _format_float(_safe_mean([item.eval_tokens_per_sec for item in items]), 2).rjust(11),
-            _format_float(_safe_mean([item.keyword_coverage for item in items])).rjust(10),
-            _format_float(_safe_mean([item.completeness_score for item in items])).rjust(10),
+            row["model"].ljust(20),
+            row["case"].ljust(10),
+            row["size"].ljust(8),
+            _format_float(row["wall_avg_s"]).rjust(12),
+            _format_float(row["tok_s_avg"], 2).rjust(11),
+            _format_float(row["coverage"]).rjust(10),
+            _format_float(row["complete"]).rjust(10),
         )
 
 
@@ -748,6 +795,153 @@ def print_case_outputs(results: list[RunResult]) -> None:
             print(f"  problem={item.problem}")
         if item.error:
             print(f"  error={item.error}")
+
+
+def latest_case_outputs(results: list[RunResult]) -> list[RunResult]:
+    latest: dict[tuple[str, str], RunResult] = {}
+    for item in results:
+        latest[(item.model, item.case_id)] = item
+    return [latest[key] for key in sorted(latest.keys())]
+
+
+def escape_md_cell(value: Any) -> str:
+    text = str(value)
+    return text.replace("|", "\\|").replace("\n", "<br>")
+
+
+def build_markdown_report(
+    args: argparse.Namespace,
+    cases: list[BenchmarkCase],
+    results: list[RunResult],
+) -> str:
+    report_time = datetime.now().astimezone().isoformat(timespec="seconds")
+    model_rows = summarize_by_model(results)
+    case_rows = summarize_by_case(results)
+    latest_rows = latest_case_outputs(results)
+
+    lines: list[str] = [
+        f"# {args.report_title}",
+        "",
+        f"_Generated: {report_time}_",
+        "",
+        "## Benchmark Setup",
+        "",
+        f"- Production prompt source: `{PROD_PROMPT_FILE}`",
+        f"- Benchmark script: `{Path(__file__).resolve()}`",
+        f"- Ollama base URL: `{args.base_url}`",
+        f"- Models: `{', '.join(args.models or [])}`",
+        f"- Runs per case: `{args.runs}`",
+        f"- Temperature: `{args.temperature}`",
+        f"- Num predict: `{args.num_predict}`",
+        f"- Num ctx: `{args.num_ctx if args.num_ctx is not None else 'default'}`",
+        "",
+        "## Cases",
+        "",
+        "| Case | Size | Intent | Priority | Source |",
+        "|---|---|---|---|---|",
+    ]
+
+    for case in cases:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    escape_md_cell(case.case_id),
+                    escape_md_cell(case.size),
+                    escape_md_cell(case.intent_id),
+                    escape_md_cell(case.priority),
+                    escape_md_cell(case.source_path or "inline"),
+                ]
+            )
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Overall Summary By Model",
+            "",
+            "| Model | Runs | OK | Avg wall time, s | Avg tokens/s | Avg completeness | JSON OK | Problem OK |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+
+    for row in model_rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    escape_md_cell(row["model"]),
+                    str(row["runs"]),
+                    str(row["ok"]),
+                    _format_float(row["wall_avg_s"]),
+                    _format_float(row["tok_s_avg"], 2),
+                    _format_float(row["complete_avg"]),
+                    escape_md_cell(row["json_ok"]),
+                    escape_md_cell(row["problem_ok"]),
+                ]
+            )
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Summary By Model And Case",
+            "",
+            "| Model | Case | Size | Avg wall time, s | Avg tokens/s | Coverage | Completeness |",
+            "|---|---|---|---:|---:|---:|---:|",
+        ]
+    )
+
+    for row in case_rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    escape_md_cell(row["model"]),
+                    escape_md_cell(row["case"]),
+                    escape_md_cell(row["size"]),
+                    _format_float(row["wall_avg_s"]),
+                    _format_float(row["tok_s_avg"], 2),
+                    _format_float(row["coverage"]),
+                    _format_float(row["complete"]),
+                ]
+            )
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Representative Outputs",
+            "",
+        ]
+    )
+
+    for item in latest_rows:
+        lines.append(
+            f"- `{item.model}` / `{item.case_id}` / `{item.case_size}`: "
+            f"wall=`{item.wall_clock_sec}` completeness=`{item.completeness_score}`"
+        )
+        if item.problem:
+            lines.append(f"  Output: `{item.problem}`")
+        if item.error:
+            lines.append(f"  Error: `{item.error}`")
+
+    lines.extend(
+        [
+            "",
+            "## Completeness Scoring",
+            "",
+            "- `20%`: valid JSON",
+            "- `45%`: non-empty `problem` field",
+            "- `15%`: single-sentence response",
+            "- `20%`: expected keyword-group coverage when sidecar metadata is provided",
+        ]
+    )
+
+    return "\n".join(lines) + "\n"
 
 
 def warmup_model(
@@ -869,6 +1063,14 @@ def main() -> int:
             encoding="utf-8",
         )
         print(f"\nSaved raw results to: {output_path}")
+
+    if args.markdown_report:
+        report_path = Path(args.markdown_report).expanduser().resolve()
+        report_path.write_text(
+            build_markdown_report(args, cases, results),
+            encoding="utf-8",
+        )
+        print(f"Saved Markdown report to: {report_path}")
 
     return 0
 
