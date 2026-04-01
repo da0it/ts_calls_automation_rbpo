@@ -127,6 +127,97 @@ The default scenario ramps load up, keeps a short soak period and checks:
 
 You can override stage parameters through environment variables such as `TARGET_VUS_1`, `TARGET_VUS_2`, `SOAK`, `RAMP_DOWN`.
 
+### 5.1 Advanced load testing with pipeline-stage metrics
+
+For diploma-grade measurements, use the advanced script:
+
+```bash
+BASE_URL=http://localhost:8000 \
+USERNAME=admin \
+PASSWORD='YOUR_PASSWORD' \
+AUDIO_FILES=/absolute/path/to/call1.wav,/absolute/path/to/call2.wav \
+WORKLOAD_MODEL=closed \
+SUMMARY_JSON=load_test_summary.json \
+SUMMARY_TEXT=load_test_summary.txt \
+k6 run scripts/load_test_process_call_advanced.js
+```
+
+The advanced scenario supports:
+
+- `closed` workload model via `ramping-vus` for concurrent-user simulation
+- `open` workload model via `ramping-arrival-rate` for arrival-rate studies
+- warm-up, ramp-up, steady-state soak and ramp-down phases
+- pass/fail thresholds for HTTP error rate, `p95`/`p99` latency and payload integrity
+- custom bottleneck metrics extracted from `processing_time` in the orchestrator response:
+  - transcription
+  - routing
+  - entity extraction
+  - ticket creation
+  - notification
+- summary export to JSON and plain text
+
+Example for the open workload model:
+
+```bash
+BASE_URL=http://localhost:8000 \
+USERNAME=admin \
+PASSWORD='YOUR_PASSWORD' \
+AUDIO_FILES=/absolute/path/to/call1.wav,/absolute/path/to/call2.wav \
+WORKLOAD_MODEL=open \
+ARRIVAL_TIME_UNIT=1m \
+START_RATE=1 \
+TARGET_RATE_1=2 \
+TARGET_RATE_2=4 \
+PRE_ALLOCATED_VUS=8 \
+MAX_VUS=32 \
+k6 run scripts/load_test_process_call_advanced.js
+```
+
+Useful environment overrides:
+
+- `WORKLOAD_MODEL=closed|open`
+- `WARMUP_DURATION`, `RAMP_UP_1`, `RAMP_UP_2`, `SOAK`, `RAMP_DOWN`
+- `START_VUS`, `WARMUP_VUS`, `TARGET_VUS_1`, `TARGET_VUS_2`
+- `ARRIVAL_TIME_UNIT`, `START_RATE`, `WARMUP_RATE`, `TARGET_RATE_1`, `TARGET_RATE_2`, `PRE_ALLOCATED_VUS`, `MAX_VUS`
+- `REQUEST_TIMEOUT`
+- `HTTP_P95_MS`, `HTTP_P99_MS`
+- `PIPELINE_P95_SEC`, `PIPELINE_P99_SEC`
+- `MAX_HTTP_ERROR_RATE`, `MAX_HTTP_5XX_RATE`, `MAX_INCOMPLETE_RATE`
+
+### 5.2 Methodology notes and references
+
+The advanced script is based on standard performance-testing practices:
+
+- phased workload profile: warm-up, ramp-up, steady-state soak, ramp-down
+- percentile-based latency control (`p95`, `p99`) instead of averages only
+- explicit error-rate thresholds
+- separation of external HTTP latency from internal pipeline-stage timing
+- support for both closed and open workload models, depending on whether the target study is concurrent-user behavior or fixed arrival rate
+
+Suggested references for the thesis:
+
+1. Raj Jain, *The Art of Computer Systems Performance Analysis: Techniques for Experimental Design, Measurement, Simulation, and Modeling*. Wiley, 1991.  
+   Publisher / bibliographic pages:  
+   [WashU profile](https://profiles.wustl.edu/en/publications/the-art-of-computer-systems-performance-analysis-techniques-for-e)  
+   [Open Library](https://openlibrary.org/books/OL1884550M/The_art_of_computer_systems_performance_analysis)
+
+2. Ian Molyneaux, *The Art of Application Performance Testing*. O'Reilly Media, 2009; 2nd ed., 2014.  
+   Bibliographic pages:  
+   [O'Reilly](https://www.oreilly.com/library/view/the-art-of/9780596155858/)  
+   [Google Books](https://books.google.com/books/about/The_Art_of_Application_Performance_Testi.html?id=DccaCe9WzeoC)
+
+3. Grafana k6 documentation, *Open and closed models*.  
+   This source is useful for justifying the choice between concurrent-user and arrival-rate workload generation:  
+   [https://grafana.com/docs/k6/latest/using-k6/scenarios/concepts/open-vs-closed/](https://grafana.com/docs/k6/latest/using-k6/scenarios/concepts/open-vs-closed/)
+
+4. Grafana k6 documentation, *Thresholds*.  
+   This source supports the use of formal pass/fail criteria for percentile latency and error rate:  
+   [https://grafana.com/docs/k6/latest/using-k6/thresholds/](https://grafana.com/docs/k6/latest/using-k6/thresholds/)
+
+5. Google SRE Book, *Service Level Objectives*.  
+   This source supports the use of high-percentile latency metrics instead of average latency alone:  
+   [https://sre.google/sre-book/service-level-objectives/](https://sre.google/sre-book/service-level-objectives/)
+
 ## 6. Script self-tests
 
 To verify the evaluation scripts themselves:
