@@ -14,6 +14,7 @@ from concurrent import futures
 # Добавляем текущую директорию в путь Python
 CURRENT_DIR = Path(__file__).parent.absolute()
 sys.path.insert(0, str(CURRENT_DIR))
+sys.path.insert(0, str(CURRENT_DIR / "grpc_gen"))
 
 import grpc
 
