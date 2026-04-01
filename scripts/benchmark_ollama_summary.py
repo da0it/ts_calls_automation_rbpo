@@ -39,6 +39,7 @@ class BenchmarkCase:
     priority: str
     entities_info: str
     expected_keyword_groups: list[list[str]]
+    source_path: str | None = None
 
 
 @dataclass
@@ -106,14 +107,42 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--case-file",
-        default=str(DEFAULT_CASE_FILE),
-        help="JSON file with benchmark cases.",
+        dest="case_files",
+        action="append",
+        help="JSON file with benchmark cases. May be passed multiple times.",
     )
     parser.add_argument(
         "--case",
         dest="case_ids",
         action="append",
         help="Benchmark case id to run. May be passed multiple times. Defaults to all cases.",
+    )
+    parser.add_argument(
+        "--transcript-file",
+        dest="transcript_files",
+        action="append",
+        help="Path to a .txt transcript file. May be passed multiple times.",
+    )
+    parser.add_argument(
+        "--transcript-dir",
+        dest="transcript_dirs",
+        action="append",
+        help="Directory with .txt transcript files. Scanned recursively.",
+    )
+    parser.add_argument(
+        "--intent-id",
+        default="general_request",
+        help="Default intent id for txt cases without sidecar metadata.",
+    )
+    parser.add_argument(
+        "--priority",
+        default="medium",
+        help="Default priority for txt cases without sidecar metadata.",
+    )
+    parser.add_argument(
+        "--entities-info",
+        default="Не извлечены",
+        help="Default entities block for txt cases without sidecar metadata.",
     )
     parser.add_argument(
         "--runs",
@@ -196,6 +225,7 @@ def load_cases(path: Path, selected_ids: set[str] | None) -> list[BenchmarkCase]
                 [str(keyword).strip() for keyword in group if str(keyword).strip()]
                 for group in item.get("expected_keyword_groups", [])
             ],
+            source_path=str(path),
         )
         if selected_ids and case.case_id not in selected_ids:
             continue
@@ -211,6 +241,147 @@ def load_cases(path: Path, selected_ids: set[str] | None) -> list[BenchmarkCase]
         raise ValueError("No benchmark cases loaded")
 
     return cases
+
+
+def discover_transcript_files(
+    transcript_files: list[str] | None,
+    transcript_dirs: list[str] | None,
+) -> list[Path]:
+    paths: list[Path] = []
+
+    for raw in transcript_files or []:
+        path = Path(raw).expanduser().resolve()
+        if path.suffix.lower() != ".txt":
+            raise ValueError(f"Transcript file must be .txt: {path}")
+        if not path.exists():
+            raise ValueError(f"Transcript file not found: {path}")
+        paths.append(path)
+
+    for raw in transcript_dirs or []:
+        directory = Path(raw).expanduser().resolve()
+        if not directory.exists():
+            raise ValueError(f"Transcript directory not found: {directory}")
+        if not directory.is_dir():
+            raise ValueError(f"Transcript path is not a directory: {directory}")
+        paths.extend(sorted(directory.rglob("*.txt")))
+
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        deduped.append(path)
+    return deduped
+
+
+def infer_case_size(path: Path, transcript: str) -> str:
+    name = path.stem.lower()
+    for size in ("small", "medium", "large"):
+        if size in name:
+            return size
+
+    length = len(transcript)
+    if length <= 500:
+        return "small"
+    if length <= 1500:
+        return "medium"
+    return "large"
+
+
+def load_sidecar_metadata(path: Path) -> dict[str, Any]:
+    candidates = [
+        path.with_suffix(".meta.json"),
+        path.with_name(path.name + ".meta.json"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError(f"Sidecar metadata must be an object: {candidate}")
+            return payload
+    return {}
+
+
+def load_txt_cases(
+    transcript_paths: list[Path],
+    selected_ids: set[str] | None,
+    default_intent_id: str,
+    default_priority: str,
+    default_entities_info: str,
+) -> list[BenchmarkCase]:
+    cases: list[BenchmarkCase] = []
+    for path in transcript_paths:
+        transcript = path.read_text(encoding="utf-8").strip()
+        if not transcript:
+            raise ValueError(f"Transcript file is empty: {path}")
+
+        meta = load_sidecar_metadata(path)
+        case_id = str(meta.get("case_id") or path.stem)
+        if selected_ids and case_id not in selected_ids:
+            continue
+
+        expected_keyword_groups = [
+            [str(keyword).strip() for keyword in group if str(keyword).strip()]
+            for group in meta.get("expected_keyword_groups", [])
+        ]
+
+        cases.append(
+            BenchmarkCase(
+                case_id=case_id,
+                size=str(meta.get("size") or infer_case_size(path, transcript)),
+                label=str(meta.get("label") or path.stem),
+                transcript=transcript,
+                intent_id=str(meta.get("intent_id") or default_intent_id),
+                priority=str(meta.get("priority") or default_priority),
+                entities_info=str(meta.get("entities_info") or default_entities_info).strip(),
+                expected_keyword_groups=expected_keyword_groups,
+                source_path=str(path),
+            )
+        )
+
+    return cases
+
+
+def build_cases(args: argparse.Namespace) -> list[BenchmarkCase]:
+    selected_ids = set(args.case_ids) if args.case_ids else None
+    cases: list[BenchmarkCase] = []
+
+    transcript_paths = discover_transcript_files(args.transcript_files, args.transcript_dirs)
+    if transcript_paths:
+        cases.extend(
+            load_txt_cases(
+                transcript_paths=transcript_paths,
+                selected_ids=selected_ids,
+                default_intent_id=args.intent_id,
+                default_priority=args.priority,
+                default_entities_info=args.entities_info,
+            )
+        )
+
+    case_files = [Path(path).expanduser().resolve() for path in args.case_files or []]
+    if not case_files and not transcript_paths:
+        case_files = [DEFAULT_CASE_FILE]
+
+    for case_file in case_files:
+        if not case_file.exists():
+            raise ValueError(f"Case file not found: {case_file}")
+        cases.extend(load_cases(case_file, selected_ids))
+
+    if selected_ids:
+        found = {case.case_id for case in cases}
+        missing = sorted(selected_ids - found)
+        if missing:
+            raise ValueError(f"Unknown case ids: {', '.join(missing)}")
+
+    if not cases:
+        raise ValueError("No benchmark cases loaded")
+
+    unique: dict[tuple[str, str], BenchmarkCase] = {}
+    for case in cases:
+        key = (case.case_id, case.source_path or "")
+        unique[key] = case
+    return list(unique.values())
 
 
 def list_models(base_url: str, timeout: int) -> list[str]:
@@ -262,7 +433,32 @@ def count_sentences(text: str) -> int:
     return max(1, len(matches))
 
 
-def evaluate_problem(problem: str, case: BenchmarkCase) -> tuple[bool, int, int, float | None, float]:
+def compute_completeness(
+    *,
+    valid_json: bool,
+    non_empty_problem: bool,
+    single_sentence: bool,
+    keyword_coverage: float | None,
+) -> float:
+    weights: list[tuple[bool, float]] = [
+        (valid_json, 0.2),
+        (non_empty_problem, 0.45),
+        (single_sentence, 0.15),
+    ]
+
+    score = sum(weight for ok, weight in weights if ok)
+    total_weight = sum(weight for _, weight in weights)
+
+    if keyword_coverage is not None:
+        score += 0.2 * keyword_coverage
+        total_weight += 0.2
+
+    if total_weight <= 0:
+        return 0.0
+    return round(score / total_weight, 3)
+
+
+def evaluate_problem(problem: str, case: BenchmarkCase) -> tuple[bool, bool, int, int, float | None, float]:
     normalized_problem = normalize_text(problem)
     non_empty_problem = bool(normalized_problem)
     single_sentence = count_sentences(problem) <= 1
@@ -274,12 +470,14 @@ def evaluate_problem(problem: str, case: BenchmarkCase) -> tuple[bool, int, int,
             hits += 1
 
     keyword_coverage = round(hits / total, 3) if total else None
-    completeness = 0.0
-    completeness += 0.25 if non_empty_problem else 0.0
-    completeness += 0.15 if single_sentence else 0.0
-    completeness += 0.60 * (keyword_coverage or 0.0)
+    completeness = compute_completeness(
+        valid_json=True,
+        non_empty_problem=non_empty_problem,
+        single_sentence=single_sentence,
+        keyword_coverage=keyword_coverage,
+    )
 
-    return single_sentence, hits, total, keyword_coverage, round(completeness, 3)
+    return non_empty_problem, single_sentence, hits, total, keyword_coverage, completeness
 
 
 def _parse_problem_from_response(raw_response: str) -> tuple[bool, str]:
@@ -359,7 +557,10 @@ def benchmark_one(
         )
         raw_response = str(payload.get("response", ""))
         valid_json, problem = _parse_problem_from_response(raw_response)
-        single_sentence, hits, total, keyword_coverage, completeness = evaluate_problem(problem, case)
+        non_empty_problem, single_sentence, hits, total, keyword_coverage, completeness = evaluate_problem(
+            problem,
+            case,
+        )
 
         return RunResult(
             model=model,
@@ -384,7 +585,7 @@ def benchmark_one(
             ),
             response_chars=len(raw_response),
             valid_json=valid_json,
-            non_empty_problem=bool(problem.strip()),
+            non_empty_problem=non_empty_problem,
             single_sentence=single_sentence,
             keyword_group_hits=hits,
             keyword_group_total=total,
@@ -577,10 +778,7 @@ def main() -> int:
 
     try:
         templates = load_prompt_templates(PROD_PROMPT_FILE)
-        cases = load_cases(
-            Path(args.case_file).expanduser().resolve(),
-            set(args.case_ids) if args.case_ids else None,
-        )
+        cases = build_cases(args)
         available_models = list_models(args.base_url, args.timeout)
     except Exception as exc:  # noqa: BLE001
         print(f"Setup failed: {exc}", file=sys.stderr)
@@ -611,7 +809,10 @@ def main() -> int:
         return 1
 
     print("Using production prompts from:", PROD_PROMPT_FILE)
-    print("Using benchmark cases from:", Path(args.case_file).expanduser().resolve())
+    if args.case_files:
+        print("Using JSON case files:", ", ".join(str(Path(path).expanduser().resolve()) for path in args.case_files))
+    if args.transcript_files or args.transcript_dirs:
+        print("Using txt transcript inputs")
     print("Models:", ", ".join(models))
 
     if args.warmup:
@@ -656,9 +857,10 @@ def main() -> int:
     print_case_outputs(results)
 
     print("\nCompleteness scoring note:")
-    print("- 25%: non-empty problem")
+    print("- 20%: valid JSON")
+    print("- 45%: non-empty problem")
     print("- 15%: one-sentence response")
-    print("- 60%: expected keyword-group coverage for the benchmark case")
+    print("- 20%: expected keyword-group coverage when sidecar keywords are provided")
 
     if args.output_json:
         output_path = Path(args.output_json).expanduser().resolve()
