@@ -56,3 +56,5 @@ postgres_data/
 *.swo
 
 .swift-module-cache/
+
+nonspam_classification_eval_clean_semicolon_5class.csv

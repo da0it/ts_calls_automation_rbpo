@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultOllamaBaseURL  = "http://localhost:11434"
-	defaultOllamaModel    = "qwen2.5:7b"
+	defaultOllamaModel    = "gemma"
 	defaultRequestTimeout = 60 * time.Second
 	maxTicketTitleRunes   = 100
 )

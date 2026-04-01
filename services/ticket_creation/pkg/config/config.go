@@ -52,7 +52,7 @@ func Load() *Config {
 		PythonNERServiceURL:           getEnv("PYTHON_NER_SERVICE_URL", "http://localhost:5000"),
 		LLMRequestTimeoutSeconds:      getEnvInt("LLM_REQUEST_TIMEOUT_SECONDS", 180),
 		OllamaBaseURL:                 getEnv("OLLAMA_BASE_URL", "http://localhost:11434"),
-		OllamaModel:                   getEnv("OLLAMA_MODEL", "qwen2.5:7b"),
+		OllamaModel:                   getEnv("OLLAMA_MODEL", "gemma"),
 		OllamaTemperature:             getEnvFloat("OLLAMA_TEMPERATURE", 0.0),
 		OllamaNumPredict:              getEnvInt("OLLAMA_NUM_PREDICT", 48),
 		TicketSystem:                  getEnv("TICKET_SYSTEM", "mock"),

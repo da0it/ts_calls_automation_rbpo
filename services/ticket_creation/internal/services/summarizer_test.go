@@ -26,7 +26,7 @@ func TestGenerateSummaryWithOllama(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if req.Model != "qwen2.5:7b" {
+		if req.Model != "gemma" {
 			t.Fatalf("unexpected model: %s", req.Model)
 		}
 		if req.Format != "json" {
@@ -47,7 +47,7 @@ func TestGenerateSummaryWithOllama(t *testing.T) {
 
 	summarizer := NewLLMSummarizer(SummarizerConfig{
 		OllamaBaseURL:     server.URL,
-		OllamaModel:       "qwen2.5:7b",
+		OllamaModel:       "gemma",
 		OllamaTemperature: 0.2,
 		OllamaNumPredict:  512,
 		RequestTimeout:    5 * time.Second,
