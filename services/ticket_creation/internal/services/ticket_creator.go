@@ -41,11 +41,18 @@ func (s *TicketCreatorService) CreateTicket(req *models.CreateTicketRequest) (*m
 	log.Printf("Creating ticket for call_id: %s, intent: %s",
 		req.Transcript.CallID, req.Routing.IntentID)
 
-	// 1. Извлекаем сущности через Python NER сервис
-	entities, err := s.pythonClient.ExtractEntities(req.Transcript.Segments)
-	if err != nil {
-		log.Printf("Warning: Entity extraction failed: %v", err)
-		entities = &models.Entities{} // Продолжаем с пустыми сущностями
+	// 1. Используем уже извлеченные сущности, если orchestrator их передал.
+	entities := req.Entities
+	if entities == nil {
+		entities = &models.Entities{}
+	}
+	if req.Entities == nil && s.pythonClient != nil {
+		extracted, err := s.pythonClient.ExtractEntities(req.Transcript.Segments)
+		if err != nil {
+			log.Printf("Warning: Entity extraction failed: %v", err)
+		} else {
+			entities = extracted
+		}
 	}
 	log.Printf("Extracted entities: %d persons, %d phones, %d emails",
 		len(entities.Persons), len(entities.Phones), len(entities.Emails))

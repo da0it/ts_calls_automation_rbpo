@@ -1,9 +1,15 @@
 package services
 
 import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"ticket_module/internal/adapters"
+	"ticket_module/internal/clients"
 	"ticket_module/internal/models"
 )
 
@@ -43,3 +49,72 @@ func TestAppendEntityDetailsAddsExtraInfo(t *testing.T) {
 		t.Fatalf("description should include person name: %q", description)
 	}
 }
+
+func TestCreateTicketSkipsPythonNERWhenEntitiesAlreadyProvided(t *testing.T) {
+	t.Parallel()
+
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Error(w, "unexpected ner call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	service := NewTicketCreatorService(
+		clients.NewPythonClient(server.URL),
+		staticSummarizer{},
+		failingTicketAdapter{},
+		nil,
+		false,
+	)
+
+	_, err := service.CreateTicket(&models.CreateTicketRequest{
+		Transcript: models.TranscriptData{
+			CallID:   "call-1",
+			Segments: []models.Segment{{Role: "client", Text: "Не могу войти в портал."}},
+		},
+		Routing: models.RoutingData{
+			IntentID:       "portal_access",
+			Priority:       "high",
+			SuggestedGroup: "technical_support",
+		},
+		Entities: &models.Entities{
+			Phones: []models.ExtractedEntity{{Value: "+79991234567"}},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected adapter error")
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("python NER should not be called when entities are provided, got %d hits", hits.Load())
+	}
+}
+
+type staticSummarizer struct{}
+
+func (staticSummarizer) GenerateSummary(
+	segments []models.Segment,
+	intentID string,
+	priority string,
+	entities *models.Entities,
+) (*models.TicketSummary, error) {
+	return &models.TicketSummary{
+		Description: "Проблема: Тестовое описание.",
+	}, nil
+}
+
+type failingTicketAdapter struct{}
+
+func (failingTicketAdapter) CreateTicket(draft *models.TicketDraft) (*models.TicketCreated, error) {
+	return nil, errors.New("stop after draft")
+}
+
+func (failingTicketAdapter) GetTicket(externalID string) (*models.TicketCreated, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (failingTicketAdapter) UpdateTicket(externalID string, update map[string]interface{}) error {
+	return errors.New("not implemented")
+}
+
+var _ adapters.TicketSystemAdapter = failingTicketAdapter{}

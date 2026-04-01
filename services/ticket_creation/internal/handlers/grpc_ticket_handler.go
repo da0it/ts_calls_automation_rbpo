@@ -52,6 +52,7 @@ func (h *TicketGRPCHandler) CreateTicket(ctx context.Context, req *callprocessin
 			Priority:         req.GetRouting().GetPriority(),
 			SuggestedGroup:   req.GetRouting().GetSuggestedGroup(),
 		},
+		Entities: entitiesFromProto(req.GetEntities()),
 		AudioURL: req.GetAudioUrl(),
 	}
 
@@ -69,4 +70,33 @@ func (h *TicketGRPCHandler) CreateTicket(ctx context.Context, req *callprocessin
 			CreatedAt:  timestamppb.New(created.CreatedAt),
 		},
 	}, nil
+}
+
+func entitiesFromProto(src *callprocessingv1.Entities) *models.Entities {
+	if src == nil {
+		return nil
+	}
+
+	return &models.Entities{
+		Persons:      entityListFromProto(src.GetPersons()),
+		Phones:       entityListFromProto(src.GetPhones()),
+		Emails:       entityListFromProto(src.GetEmails()),
+		OrderIDs:     entityListFromProto(src.GetOrderIds()),
+		AccountIDs:   entityListFromProto(src.GetAccountIds()),
+		MoneyAmounts: entityListFromProto(src.GetMoneyAmounts()),
+		Dates:        entityListFromProto(src.GetDates()),
+	}
+}
+
+func entityListFromProto(src []*callprocessingv1.ExtractedEntity) []models.ExtractedEntity {
+	out := make([]models.ExtractedEntity, 0, len(src))
+	for _, item := range src {
+		out = append(out, models.ExtractedEntity{
+			Type:       item.GetType(),
+			Value:      item.GetValue(),
+			Confidence: item.GetConfidence(),
+			Context:    item.GetContext(),
+		})
+	}
+	return out
 }
