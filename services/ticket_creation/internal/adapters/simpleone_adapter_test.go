@@ -15,7 +15,7 @@ func TestSimpleOneAdapterCreateTicketSendsPayloadAndBearer(t *testing.T) {
 	t.Parallel()
 
 	var gotAuth string
-	var gotPayload models.TicketSystemPayload
+	var gotPayload map[string]interface{}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -48,14 +48,22 @@ func TestSimpleOneAdapterCreateTicketSendsPayloadAndBearer(t *testing.T) {
 	if gotAuth != "Bearer secret-token" {
 		t.Fatalf("unexpected auth header: %q", gotAuth)
 	}
-	if gotPayload.Service.Source != "ts_calls_automation" {
-		t.Fatalf("unexpected service source: %+v", gotPayload.Service)
+	if gotPayload["title"] != "Обращение: portal_access" {
+		t.Fatalf("unexpected title in payload: %#v", gotPayload["title"])
 	}
-	if gotPayload.Request.Transcript.CallID != "call-123" {
-		t.Fatalf("unexpected call id in payload: %+v", gotPayload.Request.Transcript)
+	if gotPayload["problem_summary"] != "Проблема: Клиент не может войти в личный кабинет." {
+		t.Fatalf("unexpected problem summary in payload: %#v", gotPayload["problem_summary"])
 	}
-	if gotPayload.Draft == nil || !strings.Contains(gotPayload.Draft.Description, "Проблема") {
-		t.Fatalf("unexpected draft in payload: %+v", gotPayload.Draft)
+	if transcriptText, _ := gotPayload["transcript_text"].(string); !strings.Contains(transcriptText, "client: Не могу войти в личный кабинет.") {
+		t.Fatalf("unexpected transcript_text in payload: %#v", gotPayload["transcript_text"])
+	}
+	request, _ := gotPayload["request"].(map[string]interface{})
+	transcript, _ := request["transcript"].(map[string]interface{})
+	if transcript["call_id"] != "call-123" {
+		t.Fatalf("unexpected call id in nested request payload: %#v", gotPayload["request"])
+	}
+	if gotPayload["source_file"] != "call.wav" {
+		t.Fatalf("unexpected source_file in payload: %#v", gotPayload["source_file"])
 	}
 	if created.ExternalID != "INC000123" {
 		t.Fatalf("unexpected external id: %+v", created)

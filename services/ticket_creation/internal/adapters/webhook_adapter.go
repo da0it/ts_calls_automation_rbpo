@@ -88,7 +88,11 @@ func (a *WebhookAdapter) CreateTicket(payload *models.TicketSystemPayload) (*mod
 		return nil, fmt.Errorf("ticket payload draft is required")
 	}
 
-	requestBody, err := json.Marshal(payload)
+	return a.createTicketWithBody(payload, payload)
+}
+
+func (a *WebhookAdapter) createTicketWithBody(body interface{}, payload *models.TicketSystemPayload) (*models.TicketCreated, error) {
+	requestBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal webhook payload: %w", err)
 	}
