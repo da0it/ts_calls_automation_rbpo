@@ -21,7 +21,7 @@ Important settings:
 
 - `HF_TOKEN` if your WhisperX model download path needs authentication
 - `LLM_PROVIDER=ollama`
-- `OLLAMA_MODEL=qwen2.5:7b`
+- `OLLAMA_MODEL=gemma3:4b`
 
 ## 2. Build
 

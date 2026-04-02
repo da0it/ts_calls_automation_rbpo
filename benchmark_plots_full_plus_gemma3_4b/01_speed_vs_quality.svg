@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="700" viewBox="0 0 1100 700">
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; fill: #111827; }
+.small { font-size: 12px; fill: #4b5563; }
+.axis { stroke: #374151; stroke-width: 1; }
+.grid { stroke: #e5e7eb; stroke-width: 1; }
+.title { font-size: 24px; font-weight: 700; }
+.label { font-size: 14px; fill: #374151; }
+.value { font-size: 11px; fill: #111827; }
+</style>
+<rect width="100%" height="100%" fill="white"/>
+<text x="550.0" y="38" text-anchor="middle" class="title">Скорость против качества суммаризации</text>
+<line x1="90" y1="610.0" x2="1060" y2="610.0" class="grid"/>
+<text x="80" y="614.0" text-anchor="end" class="small">0.36</text>
+<line x1="90" y1="502.0" x2="1060" y2="502.0" class="grid"/>
+<text x="80" y="506.0" text-anchor="end" class="small">0.50</text>
+<line x1="90" y1="394.0" x2="1060" y2="394.0" class="grid"/>
+<text x="80" y="398.0" text-anchor="end" class="small">0.63</text>
+<line x1="90" y1="286.00000000000006" x2="1060" y2="286.00000000000006" class="grid"/>
+<text x="80" y="290.00000000000006" text-anchor="end" class="small">0.77</text>
+<line x1="90" y1="178.00000000000006" x2="1060" y2="178.00000000000006" class="grid"/>
+<text x="80" y="182.00000000000006" text-anchor="end" class="small">0.91</text>
+<line x1="90" y1="70.0" x2="1060" y2="70.0" class="grid"/>
+<text x="80" y="74.0" text-anchor="end" class="small">1.05</text>
+<line x1="90.0" y1="70" x2="90.0" y2="610" class="grid"/>
+<text x="90.0" y="630" text-anchor="middle" class="small">0.00</text>
+<line x1="284.0" y1="70" x2="284.0" y2="610" class="grid"/>
+<text x="284.0" y="630" text-anchor="middle" class="small">1.52</text>
+<line x1="478.0" y1="70" x2="478.0" y2="610" class="grid"/>
+<text x="478.0" y="630" text-anchor="middle" class="small">3.04</text>
+<line x1="672.0" y1="70" x2="672.0" y2="610" class="grid"/>
+<text x="672.0" y="630" text-anchor="middle" class="small">4.55</text>
+<line x1="866.0" y1="70" x2="866.0" y2="610" class="grid"/>
+<text x="866.0" y="630" text-anchor="middle" class="small">6.07</text>
+<line x1="1060.0" y1="70" x2="1060.0" y2="610" class="grid"/>
+<text x="1060.0" y="630" text-anchor="middle" class="small">7.59</text>
+<line x1="90" y1="610" x2="1060" y2="610" class="axis"/>
+<line x1="90" y1="70" x2="90" y2="610" class="axis"/>
+<text x="550.0" y="675" text-anchor="middle" class="label">Среднее время ответа, с</text>
+<text x="22" y="350.0" text-anchor="middle" class="label" transform="rotate(-90 22 350.0)">Средняя полнота ответа</text>
+<circle cx="626.8" cy="255.2" r="16.0" fill="#aeab26" stroke="#111827" stroke-width="1.2" fill-opacity="0.88"/>
+<text x="636.8" y="245.2" class="value">aya-expanse:8b</text>
+<circle cx="578.2" cy="109.0" r="20.0" fill="#22c55e" stroke="#111827" stroke-width="1.2" fill-opacity="0.88"/>
+<text x="588.2" y="99.0" class="value">gemma3:12b</text>
+<circle cx="173.1" cy="109.0" r="20.0" fill="#22c55e" stroke="#111827" stroke-width="1.2" fill-opacity="0.88"/>
+<text x="183.1" y="99.0" class="value">gemma3:4b</text>
+<circle cx="248.6" cy="109.0" r="20.0" fill="#ef4444" stroke="#111827" stroke-width="1.2" fill-opacity="0.88"/>
+<text x="258.6" y="99.0" class="value">granite3.2:8b</text>
+<circle cx="581.5" cy="255.2" r="16.0" fill="#aeab26" stroke="#111827" stroke-width="1.2" fill-opacity="0.88"/>
+<text x="591.5" y="245.2" class="value">phi4:14b</text>
+<circle cx="971.8" cy="109.0" r="20.0" fill="#22c55e" stroke="#111827" stroke-width="1.2" fill-opacity="0.88"/>
+<text x="981.8" y="99.0" class="value">qwen2.5:14b</text>
+<circle cx="138.3" cy="547.7" r="8.0" fill="#ef4444" stroke="#111827" stroke-width="1.2" fill-opacity="0.88"/>
+<text x="148.3" y="537.7" class="value">qwen2.5:3b</text>
+<circle cx="328.9" cy="157.8" r="20.0" fill="#22c55e" stroke="#111827" stroke-width="1.2" fill-opacity="0.88"/>
+<text x="338.9" y="147.8" class="value">qwen2.5:7b</text>
+<text x="860" y="67" class="label">Цвет: доля русскоязычных ответов</text>
+<rect x="860" y="85" width="60" height="14" fill="#ef4444"/>
+<rect x="920" y="85" width="60" height="14" fill="#f59e0b"/>
+<rect x="980" y="85" width="60" height="14" fill="#22c55e"/>
+<text x="860" y="115" class="small">0.0</text>
+<text x="920" y="115" class="small">0.5</text>
+<text x="980" y="115" class="small">1.0</text>
+</svg>

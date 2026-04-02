@@ -633,19 +633,20 @@
 
     const FALLBACK_CATALOG = {
       groups: [
-        { id: 'technical_support', title: 'Техническая поддержка', description: 'Общие вопросы и первичная обработка.' },
-        { id: 'sales_department', title: 'Отдел продаж', description: 'Консультации по продукту, лицензии и коммерческие обращения.' },
-        { id: 'training_department', title: 'Отдел обучения', description: 'Курсы и учебные программы.' },
-        { id: 'marketing_department', title: 'Маркетинг и партнерства', description: 'Маркетинговые инициативы и запросы на сотрудничество.' }
+        { id: 'consulting', title: 'Консультации', description: 'Запросы на консультацию и подключение профильного специалиста.' },
+        { id: 'cooperation', title: 'Сотрудничество', description: 'Партнерские, маркетинговые и иные запросы на совместную работу.' },
+        { id: 'education_center', title: 'Образовательный центр', description: 'Курсы, программы обучения и учебные материалы.' },
+        { id: 'portal_access', title: 'Доступ в портал', description: 'Проблемы с доступом, первичная обработка обращений и спам.' },
+        { id: 'sales', title: 'Продажи', description: 'Лицензии, коммерческие обращения и запросы на покупку.' }
       ],
       intents: [
-        { id: 'consulting', title: 'Консультация', default_group: 'sales_department', priority: 'medium', examples: ['нужна консультация', 'ситуация критическая'] },
-        { id: 'cooperation', title: 'Сотрудничество', default_group: 'marketing_department', priority: 'medium', examples: ['интересует сотрудничество', 'есть маркетинговое предложение'] },
-        { id: 'courses', title: 'Курсы и обучение', default_group: 'training_department', priority: 'medium', examples: ['хочу записаться на курс'] },
-        { id: 'license', title: 'Лицензия', default_group: 'sales_department', priority: 'high', examples: ['хочу купить лицензию'] },
-        { id: 'misc.triage', title: 'Неопределенное обращение', default_group: 'technical_support', priority: 'medium', examples: ['есть вопрос'] },
-        { id: 'portal_access', title: 'Доступ в портал', default_group: 'technical_support', priority: 'high', examples: ['не могу войти в портал'] },
-        { id: 'spam', title: 'Спам', default_group: 'technical_support', priority: 'high', examples: ['это спам'] }
+        { id: 'consulting', title: 'Консультация', default_group: 'consulting', priority: 'medium', examples: ['нужна консультация', 'ситуация критическая'] },
+        { id: 'cooperation', title: 'Сотрудничество', default_group: 'cooperation', priority: 'medium', examples: ['интересует сотрудничество', 'есть маркетинговое предложение'] },
+        { id: 'courses', title: 'Курсы и обучение', default_group: 'education_center', priority: 'medium', examples: ['хочу записаться на курс'] },
+        { id: 'license', title: 'Лицензия', default_group: 'sales', priority: 'high', examples: ['хочу купить лицензию'] },
+        { id: 'misc.triage', title: 'Неопределенное обращение', default_group: 'portal_access', priority: 'medium', examples: ['есть вопрос'] },
+        { id: 'portal_access', title: 'Доступ в портал', default_group: 'portal_access', priority: 'high', examples: ['не могу войти в портал'] },
+        { id: 'spam', title: 'Спам', default_group: 'portal_access', priority: 'high', examples: ['это спам'] }
       ]
     };
 
@@ -1713,7 +1714,7 @@
               <form id="add-group-form" class="${groupFormClass}">
                 <div class="row">
                   <label>New group id</label>
-                  <input id="add-group-id" placeholder="marketing_department" />
+                  <input id="add-group-id" placeholder="cooperation" />
                 </div>
                 <div class="row">
                   <label>New group title</label>
@@ -2704,7 +2705,7 @@
       const raw = String(groupID || '').trim();
       if (!raw) return true;
       const normalized = raw.toLowerCase().replace(/\s+/g, '_');
-      return normalized !== 'technical_support';
+      return normalized !== 'portal_access';
     }
 
     function getIntentOptions() {

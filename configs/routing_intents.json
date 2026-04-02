@@ -12,7 +12,7 @@
       "ситуация критическая",
       "эскалируйте обращение"
     ],
-    "default_group": "sales_department",
+    "default_group": "consulting",
     "priority": "medium",
     "tags": [
       "consulting",
@@ -44,7 +44,7 @@
       "интересует совместное продвижение",
       "предлагаем маркетинговую активность"
     ],
-    "default_group": "marketing_department",
+    "default_group": "cooperation",
     "priority": "medium",
     "tags": [
       "partnership",
@@ -74,7 +74,7 @@
       "интересует обучение сотрудников",
       "подскажите стоимость курса"
     ],
-    "default_group": "training_department",
+    "default_group": "education_center",
     "priority": "medium",
     "tags": [
       "courses",
@@ -97,7 +97,7 @@
       "интересуют условия лицензирования",
       "подскажите по лицензии"
     ],
-    "default_group": "sales_department",
+    "default_group": "sales",
     "priority": "high",
     "tags": [
       "license",
@@ -120,7 +120,7 @@
       "подскажите пожалуйста",
       "не знаю к кому обратиться"
     ],
-    "default_group": "technical_support",
+    "default_group": "portal_access",
     "priority": "medium",
     "tags": [
       "triage",
@@ -141,7 +141,7 @@
       "проблема с учетной записью",
       "не приходит код для входа"
     ],
-    "default_group": "technical_support",
+    "default_group": "portal_access",
     "priority": "high",
     "tags": [
       "portal",
@@ -164,7 +164,7 @@
       "это спам",
       "удалите номер из базы"
     ],
-    "default_group": "technical_support",
+    "default_group": "portal_access",
     "priority": "high",
     "tags": [
       "spam",

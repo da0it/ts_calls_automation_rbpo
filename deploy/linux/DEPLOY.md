@@ -35,7 +35,7 @@ Important:
 - Ensure `DATABASE_URL` points to postgres.
 - If not using docker postgres, set `START_POSTGRES_WITH_DOCKER=0`.
 - By default `ticket_creation` expects a local `ollama` at `http://localhost:11434`
-  and uses `OLLAMA_MODEL=qwen2.5:7b`.
+  and uses `OLLAMA_MODEL=gemma3:4b`.
 
 By default `./scripts/start_linux_stack.sh` will also try to start the `ollama` container from `docker-compose.yml`.
 If you already run Ollama natively on the host, set `START_OLLAMA_WITH_DOCKER=0`.
@@ -49,7 +49,7 @@ ollama serve
 If internet is allowed only for the initial model download, run once:
 
 ```bash
-ollama pull qwen2.5:7b
+ollama pull gemma3:4b
 ```
 
 If the machine must stay fully air-gapped, import/preload the model offline and keep `LLM_PROVIDER=ollama`.

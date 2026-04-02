@@ -8,7 +8,7 @@
       "это спам",
       "не интересует, удалите номер"
     ],
-    "default_group": "technical_support",
+    "default_group": "portal_access",
     "priority": "high",
     "tags": [
       "spam",
@@ -31,7 +31,7 @@
       "интересует обучение сотрудников",
       "подскажите стоимость курса"
     ],
-    "default_group": "training_department",
+    "default_group": "education_center",
     "priority": "medium",
     "tags": [
       "training",
@@ -55,7 +55,7 @@
       "хочу получить консультацию специалиста",
       "подскажите, какой вариант мне подойдет"
     ],
-    "default_group": "sales_department",
+    "default_group": "consulting",
     "priority": "medium",
     "tags": [
       "consultation",
@@ -77,7 +77,7 @@
       "готов заключить договор",
       "нужно оформить заказ"
     ],
-    "default_group": "sales_department",
+    "default_group": "sales",
     "priority": "high",
     "tags": [
       "sales",
@@ -101,7 +101,7 @@
       "рассматриваем вас как партнера конференции",
       "приглашение на отраслевую конференцию"
     ],
-    "default_group": "marketing_conferences",
+    "default_group": "cooperation",
     "priority": "medium",
     "tags": [
       "conference",
@@ -124,7 +124,7 @@
       "нужны условия для участия компании",
       "как подать заявку на участие в конференции"
     ],
-    "default_group": "marketing_conferences",
+    "default_group": "cooperation",
     "priority": "medium",
     "tags": [
       "conference",
@@ -147,7 +147,7 @@
       "подскажите пожалуйста",
       "не знаю к кому обратиться"
     ],
-    "default_group": "technical_support",
+    "default_group": "portal_access",
     "priority": "medium",
     "tags": [
       "triage"
