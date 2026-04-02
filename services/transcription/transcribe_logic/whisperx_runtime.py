@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 from transcribe_logic.whisperx_device import resolve_whisperx_device
 from transcribe_logic.whisperx_worker import (
+    _maybe_assign_diarization_speakers,
     _to_segments,
 )
 
@@ -129,5 +130,11 @@ def whisperx_transcribe_inprocess(
             audio,
             device,
             return_char_alignments=False,
+        )
+        result = _maybe_assign_diarization_speakers(
+            whisperx,
+            result,
+            audio_path=audio_path,
+            device=device,
         )
         return _to_segments(result)

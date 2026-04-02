@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from typing import Any, Dict, List
 
 try:
@@ -11,6 +12,51 @@ except ImportError:
 
 
 UNKNOWN_SPEAKER = ""
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _maybe_assign_diarization_speakers(
+    whisperx: Any,
+    result: Dict[str, Any],
+    *,
+    audio_path: str,
+    device: str,
+) -> Dict[str, Any]:
+    if not _env_bool("WHISPERX_ENABLE_DIARIZATION", False):
+        return result
+
+    hf_token = (
+        os.getenv("HF_TOKEN", "").strip()
+        or os.getenv("HUGGINGFACE_TOKEN", "").strip()
+        or os.getenv("HF_HUB_TOKEN", "").strip()
+    )
+    if not hf_token:
+        return result
+
+    diarization_pipeline = getattr(whisperx, "DiarizationPipeline", None)
+    assign_word_speakers = getattr(whisperx, "assign_word_speakers", None)
+    if diarization_pipeline is None or assign_word_speakers is None:
+        return result
+
+    min_speakers = max(1, int(os.getenv("WHISPERX_MIN_SPEAKERS", "2")))
+    max_speakers = max(min_speakers, int(os.getenv("WHISPERX_MAX_SPEAKERS", str(min_speakers))))
+
+    diarize_model = diarization_pipeline(
+        use_auth_token=hf_token,
+        device=device,
+    )
+    diarize_segments = diarize_model(
+        audio_path,
+        min_speakers=min_speakers,
+        max_speakers=max_speakers,
+    )
+    return assign_word_speakers(diarize_segments, result)
 
 
 def _to_segments(result: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -23,7 +69,7 @@ def _to_segments(result: Dict[str, Any]) -> List[Dict[str, Any]]:
             {
                 "start": float(seg.get("start", 0.0)),
                 "end": float(seg.get("end", 0.0)),
-                "speaker": UNKNOWN_SPEAKER,
+                "speaker": str(seg.get("speaker", UNKNOWN_SPEAKER) or "").strip(),
                 "text": text,
             }
         )
@@ -76,6 +122,12 @@ def main() -> None:
         audio,
         device,
         return_char_alignments=False,
+    )
+    result = _maybe_assign_diarization_speakers(
+        whisperx,
+        result,
+        audio_path=args.audio,
+        device=device,
     )
 
     segments = _to_segments(result)

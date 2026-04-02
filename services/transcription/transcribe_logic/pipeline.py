@@ -51,7 +51,7 @@ def _attach_basic_diarization(segments: List[Dict[str, Any]]) -> List[Dict[str, 
     speaker_aliases: Dict[str, str] = {}
     next_speaker_index = 0
 
-    for index, segment in enumerate(segments):
+    for segment in segments:
         normalized_speaker = _normalize_speaker_label(segment.get("speaker"))
         if normalized_speaker in {"Speaker 1", "Speaker 2"}:
             segment["speaker"] = normalized_speaker
@@ -61,7 +61,7 @@ def _attach_basic_diarization(segments: List[Dict[str, Any]]) -> List[Dict[str, 
                 next_speaker_index += 1
             segment["speaker"] = speaker_aliases[normalized_speaker]
         else:
-            segment["speaker"] = f"Speaker {(index % 2) + 1}"
+            segment["speaker"] = ""
         segment["role"] = ""
     return segments
 
@@ -106,7 +106,7 @@ def transcribe_with_roles(
             )
             mode = "whisperx_cli"
 
-        note = f"ASR backend whisperx ({mode}): mono 16k -> whisperx transcribe+align. Basic speaker labeling enabled."
+        note = f"ASR backend whisperx ({mode}): mono 16k -> whisperx transcribe+align."
 
         if not segments:
             return {
@@ -119,7 +119,7 @@ def transcribe_with_roles(
 
         segments = _attach_basic_diarization(segments)
         segments = _round_segments(segments, ndigits=2)
-        note += " Segments are labeled with basic alternating speaker tags (Speaker 1 / Speaker 2)."
+        note += " Real speaker labels are normalized to Speaker 1 / Speaker 2 when diarization data is available."
 
         return {
             "mode": mode,

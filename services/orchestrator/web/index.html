@@ -202,6 +202,13 @@
       align-items: baseline;
     }
 
+    .call-side {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
     .call-name {
       font-weight: 600;
       font-size: 13px;
@@ -214,6 +221,12 @@
       font-size: 12px;
       color: var(--muted);
       white-space: nowrap;
+    }
+
+    .call-delete-btn {
+      padding: 2px 8px;
+      min-height: 24px;
+      line-height: 1;
     }
 
     .chips {
@@ -1058,7 +1071,7 @@
     function getSegmentSpeakerLabel(segment, index) {
       const rawSpeaker = String(segment && segment.speaker || '').trim();
       if (!rawSpeaker || /^unknown$/i.test(rawSpeaker)) {
-        return `Speaker ${(index % 2) + 1}`;
+        return '';
       }
 
       const speakerMatch = rawSpeaker.match(/^speaker\s*([1-9]\d*)$/i);
@@ -1090,7 +1103,7 @@
               <div class="segment">
                 <div class="segment-meta">
                   <span>${formatSec(segment && segment.start)} - ${formatSec(segment && segment.end)} sec</span>
-                  <span class="chip">${escapeHtml(speakerLabel)}</span>
+                  ${speakerLabel ? `<span class="chip">${escapeHtml(speakerLabel)}</span>` : ''}
                   ${shouldShowRoleChip(roleLabel) ? `<span class="chip">${escapeHtml(roleLabel)}</span>` : ''}
                 </div>
                 <div class="segment-text">${escapeHtml(segment && segment.text || '')}</div>
@@ -1395,14 +1408,22 @@
           decisionChip = '<span class="chip chip-bad">rejected</span>';
         }
 
-        const groupChip = '<span class="chip">' + escapeHtml(call.review.group || 'unassigned') + '</span>';
+        const groupChip = shouldShowCallsListGroupChip(call.review.group)
+          ? '<span class="chip">' + escapeHtml(call.review.group || 'unassigned') + '</span>'
+          : '';
         const slaChip = renderSlaChip(call);
+        const deleteButton = isAdmin()
+          ? '<button class="btn btn-bad btn-mini call-delete-btn js-del-call" data-id="' + escapeAttr(call.id) + '" type="button">Delete</button>'
+          : '';
 
         return (
           '<li class="call-item ' + active + '" data-id="' + call.id + '">' +
             '<div class="call-main">' +
               '<div class="call-name">' + escapeHtml(call.sourceFilename) + '</div>' +
-              '<div class="call-time">' + formatTime(call.createdAt) + '</div>' +
+              '<div class="call-side">' +
+                '<div class="call-time">' + formatTime(call.createdAt) + '</div>' +
+                deleteButton +
+              '</div>' +
             '</div>' +
             '<div class="chips">' + decisionChip + groupChip + slaChip + '</div>' +
           '</li>'
@@ -1414,6 +1435,13 @@
           state.selectedCallId = item.dataset.id;
           persist();
           render();
+        });
+      });
+
+      [...el.callsList.querySelectorAll('.js-del-call')].forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          deleteCallById(button.dataset.id);
         });
       });
     }
@@ -2257,12 +2285,42 @@
     }
 
     function clearAllCalls() {
+      if (!isAdmin()) {
+        setBanner('Only admins can remove calls from the local review queue.', 'error');
+        return;
+      }
       if (!confirm('Clear all locally stored calls and review decisions?')) return;
       state.calls = [];
       state.selectedCallId = null;
       persist();
       render();
       setBanner('All local call records were removed.', 'ok');
+    }
+
+    function deleteCallById(callId) {
+      if (!isAdmin()) {
+        setBanner('Only admins can remove calls from the local review queue.', 'error');
+        return;
+      }
+
+      const normalizedCallId = String(callId || '').trim();
+      if (!normalizedCallId) return;
+
+      const index = state.calls.findIndex((call) => call.id === normalizedCallId);
+      if (index < 0) return;
+
+      const call = state.calls[index];
+      const label = call && call.sourceFilename ? call.sourceFilename : normalizedCallId;
+      if (!confirm('Delete call "' + label + '" from the local review queue?')) return;
+
+      state.calls.splice(index, 1);
+      if (state.selectedCallId === normalizedCallId) {
+        const nextCall = state.calls[index] || state.calls[index - 1] || null;
+        state.selectedCallId = nextCall ? nextCall.id : null;
+      }
+      persist();
+      render();
+      setBanner('Call removed from the local review queue.', 'ok');
     }
 
     async function copyCurrentCall() {
@@ -2409,6 +2467,8 @@
       const disabled = state.processing || state.spamReviewBusy || !isAuthenticated();
       el.logoutBtn.disabled = state.processing;
       el.processBtn.disabled = disabled;
+      el.clearBtn.classList.toggle('hidden', !isAdmin());
+      el.clearBtn.disabled = disabled || !isAdmin() || state.calls.length === 0;
 
       const call = state.activeTab === 'review' ? getSelectedCall() : null;
       const hasCall = Boolean(call);
@@ -2441,6 +2501,13 @@
 
     function getIntentMeta(intentID) {
       return getIntentOptions().find((intent) => intent.id === intentID) || null;
+    }
+
+    function shouldShowCallsListGroupChip(groupID) {
+      const raw = String(groupID || '').trim();
+      if (!raw) return true;
+      const normalized = raw.toLowerCase().replace(/\s+/g, '_');
+      return normalized !== 'technical_support';
     }
 
     function getIntentOptions() {
