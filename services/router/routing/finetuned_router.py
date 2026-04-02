@@ -41,6 +41,7 @@ class FinetunedRouterRuntime:
 
         self._state_lock = RLock()
         self._artifact: Optional[Dict[str, Any]] = None
+        self._artifact_path: str = ""
         self._model: Optional[AutoModelForSequenceClassification] = None
         self._tokenizer: Optional[Any] = None
         self._active_intents: Optional[Tuple[str, ...]] = None
@@ -51,19 +52,16 @@ class FinetunedRouterRuntime:
         self.reload_from_disk()
 
     def reload_from_disk(self) -> None:
-        if not self.tuned_model_path:
+        path = self._resolve_artifact_path()
+        if path is None:
             self._clear_artifact()
-            return
-        path = Path(self.tuned_model_path)
-        if not path.exists():
-            self._clear_artifact()
-            logger.info("No tuned router artifact found at %s", path)
+            logger.info("No tuned router artifact found at configured or fallback paths")
             return
         try:
             payload = torch.load(path, map_location="cpu")
             if not isinstance(payload, dict):
                 raise RuntimeError("invalid tuned artifact payload")
-            self._activate_artifact(payload)
+            self._activate_artifact(payload, artifact_path=str(path))
             logger.info("Loaded tuned router artifact from %s", path)
         except Exception as exc:
             self._clear_artifact()
@@ -75,6 +73,7 @@ class FinetunedRouterRuntime:
 
         with self._state_lock:
             artifact = dict(self._artifact or {})
+            artifact_path = str(self._artifact_path or "")
         if not artifact:
             return None, {"active": False, "reason": "no_tuned_model"}
 
@@ -92,7 +91,11 @@ class FinetunedRouterRuntime:
             }
 
         try:
-            model, tokenizer, max_len = self._ensure_model_loaded(artifact, artifact_intents)
+            model, tokenizer, max_len, resolved_model_path = self._ensure_model_loaded(
+                artifact,
+                artifact_intents,
+                artifact_path=artifact_path,
+            )
             enc = tokenizer(
                 [text],
                 truncation=True,
@@ -108,7 +111,7 @@ class FinetunedRouterRuntime:
             return probs, {
                 "active": True,
                 "trained_at": finetuned_meta.get("trained_at", ""),
-                "model_path": finetuned_meta.get("model_path", ""),
+                "model_path": resolved_model_path,
                 "intent_ids": artifact_intents,
                 "temperature": temperature,
             }
@@ -119,6 +122,7 @@ class FinetunedRouterRuntime:
     def status(self, *, current_intents: Optional[List[str]] = None) -> Dict[str, Any]:
         with self._state_lock:
             artifact = dict(self._artifact or {})
+            artifact_path = str(self._artifact_path or "")
             report = dict(self._last_train_report or {})
             last_error = str(self._last_train_error or "")
 
@@ -144,6 +148,7 @@ class FinetunedRouterRuntime:
         finetuned_ready = bool(finetuned_model and finetuned_model.get("enabled"))
         active = compatible and finetuned_ready
         reason = "ok" if active else ("intents_mismatch" if not compatible else "no_finetuned_model")
+        resolved_model_path = self._describe_model_path(finetuned_model, artifact_path=artifact_path)
 
         return {
             "active": active,
@@ -159,7 +164,7 @@ class FinetunedRouterRuntime:
             "finetuned_model": {
                 "enabled": self.finetuned_enabled,
                 "active": active,
-                "model_path": finetuned_model.get("model_path", self.finetuned_model_path),
+                "model_path": resolved_model_path,
                 "metrics": finetuned_model.get("metrics", {}),
                 "calibration": self._artifact_calibration(artifact),
             },
@@ -273,14 +278,14 @@ class FinetunedRouterRuntime:
         self,
         artifact: Dict[str, Any],
         model_intent_ids: List[str],
-    ) -> Tuple[AutoModelForSequenceClassification, Any, int]:
+        *,
+        artifact_path: str,
+    ) -> Tuple[AutoModelForSequenceClassification, Any, int, str]:
         intent_key = tuple(model_intent_ids)
         finetuned_artifact = artifact.get("finetuned_model")
         if not isinstance(finetuned_artifact, dict):
             raise RuntimeError("finetuned model metadata is missing")
-        model_path = str(finetuned_artifact.get("model_path") or "").strip()
-        if not model_path:
-            raise RuntimeError("finetuned model path is empty")
+        model_path = self._resolve_model_path(finetuned_artifact, artifact_path=artifact_path)
 
         with self._state_lock:
             if (
@@ -290,7 +295,7 @@ class FinetunedRouterRuntime:
                 and self._active_model_path == model_path
             ):
                 max_len = int(finetuned_artifact.get("max_length") or self.finetuned_max_length)
-                return self._model, self._tokenizer, max_len
+                return self._model, self._tokenizer, max_len, model_path
 
             model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
             model.eval()
@@ -305,7 +310,7 @@ class FinetunedRouterRuntime:
             self._active_intents = intent_key
             self._active_model_path = model_path
             max_len = int(finetuned_artifact.get("max_length") or self.finetuned_max_length)
-            return model, tokenizer, max_len
+            return model, tokenizer, max_len, model_path
 
     def _save_artifact(self, output_path: str, artifact: Dict[str, Any]) -> None:
         path = Path(output_path)
@@ -314,9 +319,10 @@ class FinetunedRouterRuntime:
         torch.save(artifact, tmp)
         os.replace(tmp, path)
 
-    def _activate_artifact(self, artifact: Dict[str, Any]) -> None:
+    def _activate_artifact(self, artifact: Dict[str, Any], *, artifact_path: str = "") -> None:
         with self._state_lock:
             self._artifact = dict(artifact)
+            self._artifact_path = str(artifact_path or self.tuned_model_path or "")
             self._model = None
             self._tokenizer = None
             self._active_intents = None
@@ -325,6 +331,7 @@ class FinetunedRouterRuntime:
     def _clear_artifact(self) -> None:
         with self._state_lock:
             self._artifact = None
+            self._artifact_path = ""
             self._model = None
             self._tokenizer = None
             self._active_intents = None
@@ -368,6 +375,99 @@ class FinetunedRouterRuntime:
         if temperature <= 0.0:
             return 1.0
         return temperature
+
+    def _resolve_artifact_path(self) -> Optional[Path]:
+        candidates: List[Path] = []
+        seen = set()
+
+        def add_candidate(path: Optional[Path]) -> None:
+            if path is None:
+                return
+            candidate = Path(path).expanduser()
+            key = str(candidate)
+            if key in seen:
+                return
+            seen.add(key)
+            candidates.append(candidate)
+
+        if self.tuned_model_path:
+            add_candidate(Path(self.tuned_model_path))
+        if self.finetuned_model_path:
+            model_dir = Path(self.finetuned_model_path)
+            add_candidate(model_dir / "router_tuned_head.pt")
+            add_candidate(model_dir.parent / "router_tuned_head.pt")
+
+        for candidate in candidates:
+            if candidate.exists():
+                configured_path = str(Path(self.tuned_model_path).expanduser()) if self.tuned_model_path else ""
+                if configured_path and str(candidate) != configured_path:
+                    logger.info("Using fallback tuned router artifact path %s instead of %s", candidate, configured_path)
+                return candidate
+        return None
+
+    def _describe_model_path(self, finetuned_artifact: Dict[str, Any], *, artifact_path: str) -> str:
+        try:
+            return self._resolve_model_path(finetuned_artifact, artifact_path=artifact_path)
+        except Exception:
+            raw_model_path = str(finetuned_artifact.get("model_path") or "").strip()
+            return raw_model_path or self.finetuned_model_path
+
+    def _resolve_model_path(self, finetuned_artifact: Dict[str, Any], *, artifact_path: str) -> str:
+        raw_model_path = str(finetuned_artifact.get("model_path") or "").strip()
+        artifact_file = Path(artifact_path).expanduser() if artifact_path else None
+        candidates: List[Path] = []
+        seen = set()
+
+        def add_candidate(path: Optional[Path]) -> None:
+            if path is None:
+                return
+            candidate = Path(path).expanduser()
+            key = str(candidate)
+            if key in seen:
+                return
+            seen.add(key)
+            candidates.append(candidate)
+
+        if raw_model_path:
+            raw_path = Path(raw_model_path)
+            add_candidate(raw_path)
+            if artifact_file is not None:
+                add_candidate(artifact_file.parent / raw_path.name)
+        if self.finetuned_model_path:
+            add_candidate(Path(self.finetuned_model_path))
+        if artifact_file is not None:
+            add_candidate(artifact_file.parent)
+            if self.finetuned_model_path:
+                add_candidate(artifact_file.parent / Path(self.finetuned_model_path).name)
+
+        for candidate in candidates:
+            if self._is_model_dir(candidate):
+                resolved = str(candidate.resolve())
+                if raw_model_path and resolved != raw_model_path:
+                    logger.info(
+                        "Using resolved fine-tuned model path %s instead of artifact path %s",
+                        resolved,
+                        raw_model_path,
+                    )
+                return resolved
+
+        attempted = ", ".join(str(candidate) for candidate in candidates) or "<none>"
+        raise RuntimeError(
+            "fine-tuned model directory not found; "
+            f"artifact_model_path={raw_model_path or '<empty>'}, attempted={attempted}"
+        )
+
+    def _is_model_dir(self, path: Path) -> bool:
+        try:
+            candidate = path.expanduser()
+        except Exception:
+            return False
+        if not candidate.exists() or not candidate.is_dir():
+            return False
+        has_config = (candidate / "config.json").exists()
+        has_tokenizer = (candidate / "tokenizer_config.json").exists() or (candidate / "tokenizer.json").exists()
+        has_weights = (candidate / "model.safetensors").exists() or (candidate / "pytorch_model.bin").exists()
+        return has_config and has_tokenizer and has_weights
 
     def _same_intent_set(self, left: List[str], right: List[str]) -> bool:
         left_norm = self._comparable_intent_ids(left)

@@ -29,8 +29,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--artifact-path",
-        default="configs/router_tuned_head.pt",
-        help="Path to router tuned artifact (.pt).",
+        default="",
+        help="Path to router tuned artifact (.pt). Defaults to <target-model-dir>/router_tuned_head.pt.",
     )
     parser.add_argument(
         "--artifact-model-path",
@@ -221,7 +221,11 @@ def main() -> int:
     source_dir = Path(args.source_model_dir).expanduser().resolve()
     intents_path = Path(args.intents_path).expanduser().resolve()
     target_model_dir = Path(args.target_model_dir).expanduser().resolve()
-    artifact_path = Path(args.artifact_path).expanduser().resolve()
+    artifact_path = (
+        Path(args.artifact_path).expanduser().resolve()
+        if str(args.artifact_path).strip()
+        else (target_model_dir / "router_tuned_head.pt").resolve()
+    )
     label_encoder_path = None
     temperature_path = None
     if str(args.label_encoder_path).strip():

@@ -368,12 +368,10 @@ def serve() -> None:
     )
 
     feedback_path = os.getenv("ROUTER_FEEDBACK_PATH", str(Path(__file__).parent / "configs" / "routing_feedback.jsonl"))
-    tuned_model_path = os.getenv("ROUTER_TUNED_MODEL_PATH", str(Path(__file__).parent / "configs" / "router_tuned_head.pt"))
     finetuned_enabled = os.getenv("ROUTER_FINETUNED_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
-    finetuned_model_path = os.getenv(
-        "ROUTER_FINETUNED_MODEL_PATH",
-        str(Path(__file__).parent / "configs" / "router_finetuned_model"),
-    )
+    default_finetuned_model_path = str(Path(__file__).parent / "configs" / "router_finetuned_model")
+    finetuned_model_path = os.getenv("ROUTER_FINETUNED_MODEL_PATH", default_finetuned_model_path)
+    tuned_model_path = os.getenv("ROUTER_TUNED_MODEL_PATH", str(Path(finetuned_model_path) / "router_tuned_head.pt"))
     finetuned_learning_rate = float(os.getenv("ROUTER_FINETUNED_LR", "2e-5"))
     finetuned_epochs = int(os.getenv("ROUTER_FINETUNED_EPOCHS", "3"))
     finetuned_batch_size = int(os.getenv("ROUTER_FINETUNED_BATCH_SIZE", "16"))
