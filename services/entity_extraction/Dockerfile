@@ -17,8 +17,11 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
     && printf "Cython<3\n" > /tmp/pip-constraints.txt \
     && PIP_CONSTRAINT=/tmp/pip-constraints.txt pip install --no-cache-dir -r requirements.txt
 
-# Скачивание DeepPavlov модели (опционально, можно делать при первом запуске)
+# Установка зависимостей DeepPavlov для NER
 RUN python -m deeppavlov install ner_rus_bert
+
+# Скачиваем саму модель на этапе сборки, чтобы startup контейнера не зависел от сети.
+RUN python -c "from deeppavlov import build_model, configs; build_model(configs.ner.ner_rus_bert, download=True, install=False)"
 
 # Копирование кода
 COPY . .

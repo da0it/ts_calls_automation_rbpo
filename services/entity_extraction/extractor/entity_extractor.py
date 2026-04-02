@@ -1,9 +1,9 @@
 # services/entity-extraction/extractor/entity_extractor.py
 from __future__ import annotations
+
 import re
 import logging
 from typing import List, Dict, Any, Optional
-from deeppavlov import build_model, configs
 
 from .models import Entities, ExtractedEntity, Segment
 
@@ -12,32 +12,50 @@ logger = logging.getLogger(__name__)
 
 class EntityExtractor:
     """Извлечение сущностей из текста диалога используя DeepPavlov NER"""
-    
-    def __init__(self, use_ner: bool = True):
+
+    def __init__(
+        self,
+        use_ner: bool = True,
+        *,
+        allow_download: bool = False,
+        allow_install: bool = False,
+    ):
         """
         Args:
             use_ner: Использовать DeepPavlov NER для извлечения персон и организаций
         """
         self.use_ner = use_ner
         self.ner_model = None
-        
+        self.mode = "regex"
+        self.startup_error = ""
+
         if use_ner:
             try:
+                from deeppavlov import build_model, configs
+
                 logger.info("Loading DeepPavlov NER model (ner_rus_bert)...")
-                # Загружаем предобученную модель для русского NER
-                self.ner_model = build_model(configs.ner.ner_rus_bert, download=True, install=True)
+                self.ner_model = build_model(
+                    configs.ner.ner_rus_bert,
+                    download=allow_download,
+                    install=allow_install,
+                )
+                self.mode = "deeppavlov"
                 logger.info("DeepPavlov NER model loaded successfully")
             except Exception as e:
-                logger.error(f"Failed to load DeepPavlov NER: {e}, will use regex only")
+                self.startup_error = str(e)
+                logger.warning(
+                    "Failed to load DeepPavlov NER: %s. Falling back to regex-only mode.",
+                    e,
+                )
                 self.ner_model = None
-    
+
     def extract(self, segments: List[Segment]) -> Entities:
         """
         Извлекает сущности из сегментов диалога
-        
+
         Args:
             segments: Список сегментов с полями start, end, speaker, role, text
-            
+
         Returns:
             Entities с извлеченными данными
         """
@@ -45,7 +63,7 @@ class EntityExtractor:
         caller_text = []
         all_text = []
         caller_contexts = []  # Для сохранения контекста каждого сегмента
-        
+
         for seg in segments:
             all_text.append(seg.text)
             if seg.role == "звонящий":
@@ -61,9 +79,9 @@ class EntityExtractor:
         full_text_all = " ".join(all_text)
         # Если роли были определены плохо и caller пуст, не теряем сущности.
         source_text = full_text if full_text.strip() else full_text_all
-        
+
         entities = Entities()
-        
+
         # 1. Извлекаем персоны и организации через DeepPavlov NER
         if self.ner_model:
             ner_entities = self._extract_ner_entities(source_text, caller_contexts)
@@ -90,21 +108,26 @@ class EntityExtractor:
         
         # 7. Извлекаем даты
         entities.dates = self._extract_dates(full_text_all)
-        
-        logger.info(f"Extracted entities: {len(entities.persons)} persons, "
-                   f"{len(entities.phones)} phones, {len(entities.emails)} emails, "
-                   f"{len(entities.money_amounts)} money amounts")
-        
+
+        logger.info(
+            "Extracted entities in mode=%s: %d persons, %d phones, %d emails, %d money amounts",
+            self.mode,
+            len(entities.persons),
+            len(entities.phones),
+            len(entities.emails),
+            len(entities.money_amounts),
+        )
+
         return entities
-    
+
     def _extract_ner_entities(
-        self, 
-        text: str, 
+        self,
+        text: str,
         contexts: List[Dict]
     ) -> Dict[str, List[ExtractedEntity]]:
         """
         Извлечение сущностей через DeepPavlov NER
-        
+
         DeepPavlov NER возвращает теги в формате BIO:
         - B-PER: начало имени персоны
         - I-PER: продолжение имени персоны
@@ -126,12 +149,12 @@ class EntityExtractor:
                 "organizations": [],
                 "locations": []
             }
-            
+
             # Собираем сущности из BIO-тегов
             current_entity = None
             current_tokens = []
             current_type = None
-            
+
             for token, tag in zip(tokens, tags):
                 if tag.startswith("B-"):
                     # Начало новой сущности
@@ -142,14 +165,14 @@ class EntityExtractor:
                         )
                         if entity:
                             entities[self._map_tag_to_type(current_type)].append(entity)
-                    
+
                     current_tokens = [token]
                     current_type = tag[2:]  # PER, ORG, LOC
-                    
+
                 elif tag.startswith("I-") and current_tokens:
                     # Продолжение текущей сущности
                     current_tokens.append(token)
-                    
+
                 else:
                     # Тег O или несовпадение типа - завершаем текущую
                     if current_tokens:
@@ -160,7 +183,7 @@ class EntityExtractor:
                             entities[self._map_tag_to_type(current_type)].append(entity)
                     current_tokens = []
                     current_type = None
-            
+
             # Не забываем последнюю сущность
             if current_tokens:
                 entity = self._create_entity_from_tokens(
@@ -168,34 +191,37 @@ class EntityExtractor:
                 )
                 if entity:
                     entities[self._map_tag_to_type(current_type)].append(entity)
-            
-            logger.info(f"DeepPavlov NER found: {len(entities['persons'])} persons, "
-                       f"{len(entities['organizations'])} orgs, "
-                       f"{len(entities['locations'])} locations")
-            
+
+            logger.info(
+                "DeepPavlov NER found: %d persons, %d orgs, %d locations",
+                len(entities["persons"]),
+                len(entities["organizations"]),
+                len(entities["locations"]),
+            )
+
             return entities
-            
+
         except Exception as e:
             logger.error(f"DeepPavlov NER extraction failed: {e}")
             return {"persons": [], "organizations": [], "locations": []}
-    
+
     def _create_entity_from_tokens(
-        self, 
-        tokens: List[str], 
+        self,
+        tokens: List[str],
         entity_type: str,
         full_text: str
     ) -> Optional[ExtractedEntity]:
         """Создает ExtractedEntity из токенов"""
         if not tokens:
             return None
-        
+
         # Собираем значение
         value = " ".join(tokens).strip()
-        
+
         # Фильтруем шум (односимвольные, цифры и т.д.)
         if len(value) < 2 or value.isdigit():
             return None
-        
+
         # Ищем контекст в полном тексте
         try:
             pos = full_text.lower().find(value.lower())
@@ -207,21 +233,21 @@ class EntityExtractor:
                 context = value
         except:
             context = value
-        
+
         # Confidence зависит от длины и типа
         confidence = 0.85
         if len(tokens) > 2:  # Полное имя (Иван Иванович Иванов)
             confidence = 0.9
         if entity_type == "PER" and len(value.split()) >= 2:  # Имя + Фамилия
             confidence = 0.95
-        
+
         return ExtractedEntity(
             type="person" if entity_type == "PER" else "organization",
             value=value,
             confidence=confidence,
             context=context
         )
-    
+
     def _map_tag_to_type(self, tag: str) -> str:
         """Маппинг BIO-тегов в типы сущностей"""
         mapping = {
@@ -230,7 +256,7 @@ class EntityExtractor:
             "LOC": "locations"
         }
         return mapping.get(tag, "persons")
-    
+
     def _extract_persons_regex(self, text: str) -> List[ExtractedEntity]:
         """
         Fallback: простое извлечение имен через regex
@@ -240,19 +266,19 @@ class EntityExtractor:
             r'(?:меня\s+зовут|зовут|я|это)\s+([А-ЯЁ][а-яё]+(?:[\s,]+[А-ЯЁ][а-яё]+){0,2})',
             r'\b([А-ЯЁ][а-яё]+(?:[\s,]+[А-ЯЁ][а-яё]+){1,2})\b',
         ]
-        
+
         persons = []
         seen = set()  # Для дедупликации
-        
+
         for pattern in patterns:
             for m in re.finditer(pattern, text):
                 name = re.sub(r'[\s,]+', ' ', m.group(1)).strip()
-                
+
                 # Фильтр: имя должно быть >= 2 слов или известное имя
                 key = name.lower()
                 if key in seen:
                     continue
-                
+
                 if self._is_likely_person_name(name):
                     start = max(0, m.start() - 30)
                     end = min(len(text), m.end() + 30)

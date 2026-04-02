@@ -1,11 +1,12 @@
 # services/entity-extraction/main.py
+import logging
+import os
+import sys
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import List, Optional
-import logging
-import sys
 
 from extractor.entity_extractor import EntityExtractor
 from extractor.models import Segment, Entities
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 # State для хранения экстрактора
 class AppState:
     extractor: Optional[EntityExtractor] = None
+    startup_error: str = ""
 
 state = AppState()
 
@@ -32,16 +34,72 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _service_status() -> dict:
+    if state.extractor is None:
+        return {
+            "status": "starting",
+            "service": "entity-extraction",
+            "mode": "starting",
+            "ner_loaded": False,
+            "ready": False,
+            "startup_error": state.startup_error or "",
+        }
+
+    degraded = state.extractor.ner_model is None
+    return {
+        "status": "degraded" if degraded else "healthy",
+        "service": "entity-extraction",
+        "mode": state.extractor.mode,
+        "ner_loaded": not degraded,
+        "ready": True,
+        "startup_error": state.extractor.startup_error or state.startup_error or "",
+    }
+
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting Entity Extraction Service...")
+    use_ner = _env_bool("ENTITY_USE_NER", True)
+    allow_download = _env_bool("ENTITY_NER_DOWNLOAD_ON_STARTUP", False)
+    allow_install = _env_bool("ENTITY_NER_INSTALL_ON_STARTUP", False)
+
     try:
-        logger.info("Initializing EntityExtractor (this may take a while)...")
-        state.extractor = EntityExtractor(use_ner=True)
-        logger.info("✓ EntityExtractor initialized successfully")
+        logger.info(
+            "Initializing EntityExtractor: use_ner=%s download_on_startup=%s install_on_startup=%s",
+            use_ner,
+            allow_download,
+            allow_install,
+        )
+        state.extractor = EntityExtractor(
+            use_ner=use_ner,
+            allow_download=allow_download,
+            allow_install=allow_install,
+        )
+        state.startup_error = state.extractor.startup_error
+        if state.extractor.ner_model is not None:
+            logger.info("Entity Extraction Service is ready with DeepPavlov NER")
+        else:
+            logger.warning(
+                "Entity Extraction Service is ready in regex-only mode. startup_error=%s",
+                state.startup_error or "none",
+            )
     except Exception as e:
-        logger.error(f"✗ Failed to initialize EntityExtractor: {e}", exc_info=True)
-        raise
+        state.startup_error = str(e)
+        logger.error(
+            "Failed to initialize EntityExtractor with NER, falling back to regex-only mode: %s",
+            e,
+            exc_info=True,
+        )
+        state.extractor = EntityExtractor(use_ner=False)
+        logger.warning("Entity Extraction Service started in forced regex-only mode")
 
 
 @app.on_event("shutdown")
@@ -115,21 +173,13 @@ async def extract_entities(request: ExtractRequest):
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    is_ready = (
-        state.extractor is not None 
-        and state.extractor.ner_model is not None
-    )
-    return {
-        "status": "healthy" if is_ready else "starting",
-        "service": "entity-extraction",
-        "ner_loaded": is_ready,
-        "ready": is_ready
-    }
+    return _service_status()
 
 
 @app.get("/")
 async def root():
     """Root endpoint"""
+    status = _service_status()
     return {
         "service": "Entity Extraction Service",
         "version": "1.0.0",
@@ -140,7 +190,11 @@ async def root():
             "docs": "GET /docs",
             "redoc": "GET /redoc"
         },
-        "status": "ready" if state.extractor is not None else "starting"
+        "status": status["status"],
+        "mode": status["mode"],
+        "ner_loaded": status["ner_loaded"],
+        "ready": status["ready"],
+        "startup_error": status["startup_error"],
     }
 
 
