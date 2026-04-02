@@ -43,6 +43,11 @@ try:
 except ImportError:
     warmup_whisperx_runtime = None
 
+try:
+    from transcribe_logic.whisperx_device import get_whisperx_device_from_env
+except ImportError:
+    get_whisperx_device_from_env = None
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -96,11 +101,16 @@ class TranscriptionServicer(pb2_grpc.TranscriptionServiceServicer):
             return
 
         try:
-            logger.info("WhisperX preload enabled: warming up persistent runtime...")
+            device = (
+                get_whisperx_device_from_env()
+                if get_whisperx_device_from_env is not None
+                else os.getenv("WHISPERX_DEVICE", "auto")
+            )
+            logger.info("WhisperX preload enabled: warming up persistent runtime on device=%s...", device)
             warmup_whisperx_runtime(
                 model=os.getenv("WHISPERX_MODEL", "large-v3"),
                 language=os.getenv("WHISPERX_LANGUAGE", "ru"),
-                device=os.getenv("WHISPERX_DEVICE", "cpu"),
+                device=device,
                 compute_type=os.getenv("WHISPERX_COMPUTE_TYPE", "int8"),
                 vad_method=os.getenv("WHISPERX_VAD_METHOD", "silero").strip().lower(),
             )

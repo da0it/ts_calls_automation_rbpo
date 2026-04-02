@@ -14,17 +14,6 @@ type createGroupRequest struct {
 	Description string `json:"description"`
 }
 
-type createIntentRequest struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	Examples     []string `json:"examples"`
-	DefaultGroup string   `json:"default_group"`
-	Priority     string   `json:"priority"`
-	Tags         []string `json:"tags"`
-	Keywords     []string `json:"keywords"`
-}
-
 func (h *ProcessHandler) GetRoutingConfig(c *gin.Context) {
 	catalog, err := h.routingConfigService.GetCatalog()
 	if err != nil {
@@ -107,37 +96,6 @@ func (h *ProcessHandler) DeleteRoutingGroup(c *gin.Context) {
 		return
 	}
 	h.writeAudit(c, "routing.group.delete", "routing_group", groupID, "success", map[string]interface{}{})
-	c.JSON(http.StatusOK, catalog)
-}
-
-func (h *ProcessHandler) CreateRoutingIntent(c *gin.Context) {
-	var payload createIntentRequest
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		h.writeAudit(c, "routing.intent.create", "routing_intent", payload.ID, "failed", map[string]interface{}{
-			"reason": "invalid_payload",
-		})
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	catalog, err := h.routingConfigService.AddIntent(services.RoutingIntent{
-		ID:           payload.ID,
-		Title:        payload.Title,
-		Description:  payload.Description,
-		Examples:     payload.Examples,
-		DefaultGroup: payload.DefaultGroup,
-		Priority:     payload.Priority,
-		Tags:         payload.Tags,
-		Keywords:     payload.Keywords,
-	})
-	if err != nil {
-		h.writeAudit(c, "routing.intent.create", "routing_intent", payload.ID, "failed", map[string]interface{}{
-			"reason": err.Error(),
-		})
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	h.writeAudit(c, "routing.intent.create", "routing_intent", payload.ID, "success", map[string]interface{}{})
 	c.JSON(http.StatusOK, catalog)
 }
 

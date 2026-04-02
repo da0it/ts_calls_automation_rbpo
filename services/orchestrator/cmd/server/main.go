@@ -53,6 +53,10 @@ func main() {
 	if err := auditService.Migrate(); err != nil {
 		log.Fatalf("Failed to run audit migration: %v", err)
 	}
+	appSettingsService := services.NewAppSettingsService(db)
+	if err := appSettingsService.Migrate(); err != nil {
+		log.Fatalf("Failed to run app settings migration: %v", err)
+	}
 	if err := userService.SeedAdmin(cfg.AdminUsername, cfg.AdminPassword); err != nil {
 		log.Fatalf("Failed to seed admin: %v", err)
 	}
@@ -125,6 +129,7 @@ func main() {
 	// Инициализация handlers
 	processHandler := handlers.NewProcessHandler(
 		orchestrator,
+		appSettingsService,
 		routingConfigService,
 		routingFeedbackService,
 		spamFeedbackService,
@@ -253,6 +258,7 @@ func setupRouter(
 		api.GET("/auth/me", auth.Me)
 		api.POST("/process-call", h.ProcessCall)
 		api.POST("/spam-review", h.ResolveSpamReview)
+		api.GET("/app-settings", h.GetAppSettings)
 		api.GET("/routing-config", h.GetRoutingConfig)
 		api.POST("/routing-feedback", h.SaveRoutingFeedback)
 		api.GET("/routing-model/status", h.GetRoutingModelStatus)
@@ -261,10 +267,10 @@ func setupRouter(
 		admin := api.Group("")
 		admin.Use(adminMw)
 		{
+			admin.PUT("/app-settings", h.UpdateAppSettings)
 			admin.PUT("/routing-config", h.UpdateRoutingConfig)
 			admin.POST("/routing-config/groups", h.CreateRoutingGroup)
 			admin.DELETE("/routing-config/groups/:id", h.DeleteRoutingGroup)
-			admin.POST("/routing-config/intents", h.CreateRoutingIntent)
 			admin.DELETE("/routing-config/intents/:id", h.DeleteRoutingIntent)
 			admin.POST("/routing-model/reload", h.ReloadRoutingModel)
 			admin.POST("/routing-model/train", h.TrainRoutingModel)

@@ -83,7 +83,14 @@ func (s *RoutingConfigService) ReplaceCatalog(catalog *RoutingCatalog) (*Routing
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	currentCatalog, err := s.loadCatalogLocked()
+	if err != nil {
+		return nil, err
+	}
 	if err := validateCatalog(catalog); err != nil {
+		return nil, err
+	}
+	if err := validateNoNewIntentIDs(currentCatalog, catalog); err != nil {
 		return nil, err
 	}
 	if err := s.saveCatalogLocked(catalog); err != nil {
@@ -158,35 +165,6 @@ func (s *RoutingConfigService) DeleteGroup(groupID string) (*RoutingCatalog, err
 	}
 
 	catalog.Groups = filtered
-	if err := s.saveCatalogLocked(catalog); err != nil {
-		return nil, err
-	}
-	return s.loadCatalogLocked()
-}
-
-func (s *RoutingConfigService) AddIntent(intent RoutingIntent) (*RoutingCatalog, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	catalog, err := s.loadCatalogLocked()
-	if err != nil {
-		return nil, err
-	}
-
-	intent = normalizeIntent(intent)
-	if intent.ID == "" || intent.Title == "" {
-		return nil, errors.New("intent id and title are required")
-	}
-	for _, existing := range catalog.Intents {
-		if existing.ID == intent.ID {
-			return nil, fmt.Errorf("intent %q already exists", intent.ID)
-		}
-	}
-
-	catalog.Intents = append(catalog.Intents, intent)
-	if err := validateCatalog(catalog); err != nil {
-		return nil, err
-	}
 	if err := s.saveCatalogLocked(catalog); err != nil {
 		return nil, err
 	}
@@ -283,6 +261,48 @@ func (s *RoutingConfigService) AddExampleToIntent(intentID, example string, maxE
 		return false, err
 	}
 	return true, nil
+}
+
+func (s *RoutingConfigService) ValidateFeedbackTarget(intentID, groupID string) error {
+	intentID = strings.TrimSpace(intentID)
+	groupID = strings.TrimSpace(groupID)
+	if intentID == "" {
+		return errors.New("intent id is required")
+	}
+	if groupID == "" {
+		return errors.New("group id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	catalog, err := s.loadCatalogLocked()
+	if err != nil {
+		return err
+	}
+
+	intentExists := false
+	for _, intent := range catalog.Intents {
+		if intent.ID == intentID {
+			intentExists = true
+			break
+		}
+	}
+	if !intentExists {
+		return fmt.Errorf("intent %q not found in routing catalog", intentID)
+	}
+
+	groupExists := false
+	for _, group := range catalog.Groups {
+		if group.ID == groupID {
+			groupExists = true
+			break
+		}
+	}
+	if !groupExists {
+		return fmt.Errorf("group %q not found in routing catalog", groupID)
+	}
+	return nil
 }
 
 func (s *RoutingConfigService) loadCatalogLocked() (*RoutingCatalog, error) {
@@ -424,6 +444,32 @@ func validateCatalog(catalog *RoutingCatalog) error {
 			return fmt.Errorf("duplicate intent id %q", intent.ID)
 		}
 		intentSet[intent.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validateNoNewIntentIDs(current, next *RoutingCatalog) error {
+	if current == nil || next == nil {
+		return nil
+	}
+
+	existing := make(map[string]struct{}, len(current.Intents))
+	for _, rawIntent := range current.Intents {
+		intentID := normalizeIntent(rawIntent).ID
+		if intentID != "" {
+			existing[intentID] = struct{}{}
+		}
+	}
+
+	for _, rawIntent := range next.Intents {
+		intentID := normalizeIntent(rawIntent).ID
+		if intentID == "" {
+			continue
+		}
+		if _, ok := existing[intentID]; ok {
+			continue
+		}
+		return fmt.Errorf("creating new intent %q via admin is disabled", intentID)
 	}
 	return nil
 }

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from typing import Any, Dict, List, Optional
 
 from transcribe_logic.audio_utils import to_wav_16k_mono_preprocessed
+from transcribe_logic.whisperx_device import get_whisperx_device_from_env
 from transcribe_logic.whisperx_ext import whisperx_transcribe_via_cli
 from transcribe_logic.whisperx_runtime import whisperx_transcribe_inprocess
-
-ROLE_UNKNOWN = "не определено"
-DEFAULT_SPEAKER = "UNKNOWN"
-
 
 def _default_whisperx_venv_python() -> str:
     return os.getenv(
@@ -34,11 +32,37 @@ def _round_segments(segments: List[Dict[str, Any]], ndigits: int = 2) -> List[Di
     return out
 
 
-def _attach_default_labels(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    for s in segments:
-        if not s.get("speaker"):
-            s["speaker"] = DEFAULT_SPEAKER
-        s["role"] = ROLE_UNKNOWN
+def _normalize_speaker_label(raw_speaker: Any) -> Optional[str]:
+    speaker = str(raw_speaker or "").strip()
+    if not speaker or speaker.upper() == "UNKNOWN":
+        return None
+
+    match = re.match(r"^speaker[\s_-]*(\d+)$", speaker, flags=re.IGNORECASE)
+    if match:
+        numeric = int(match.group(1))
+        if "_" in speaker or speaker.upper().startswith("SPEAKER_"):
+            return f"Speaker {(numeric % 2) + 1}"
+        return f"Speaker {1 if numeric <= 1 else 2 if numeric == 2 else ((numeric - 1) % 2) + 1}"
+
+    return speaker
+
+
+def _attach_basic_diarization(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    speaker_aliases: Dict[str, str] = {}
+    next_speaker_index = 0
+
+    for index, segment in enumerate(segments):
+        normalized_speaker = _normalize_speaker_label(segment.get("speaker"))
+        if normalized_speaker in {"Speaker 1", "Speaker 2"}:
+            segment["speaker"] = normalized_speaker
+        elif normalized_speaker:
+            if normalized_speaker not in speaker_aliases:
+                speaker_aliases[normalized_speaker] = f"Speaker {(next_speaker_index % 2) + 1}"
+                next_speaker_index += 1
+            segment["speaker"] = speaker_aliases[normalized_speaker]
+        else:
+            segment["speaker"] = f"Speaker {(index % 2) + 1}"
+        segment["role"] = ""
     return segments
 
 
@@ -63,7 +87,7 @@ def transcribe_with_roles(
         common_kwargs = dict(
             model=os.getenv("WHISPERX_MODEL", "large-v3"),
             language=os.getenv("WHISPERX_LANGUAGE", "ru"),
-            device=os.getenv("WHISPERX_DEVICE", "cpu"),
+            device=get_whisperx_device_from_env(),
             compute_type=os.getenv("WHISPERX_COMPUTE_TYPE", "int8"),
             batch_size=int(os.getenv("WHISPERX_BATCH_SIZE", "4")),
             vad_method=os.getenv("WHISPERX_VAD_METHOD", "silero").strip().lower(),
@@ -82,7 +106,7 @@ def transcribe_with_roles(
             )
             mode = "whisperx_cli"
 
-        note = f"ASR backend whisperx ({mode}): mono 16k -> whisperx transcribe+align. Diarization disabled."
+        note = f"ASR backend whisperx ({mode}): mono 16k -> whisperx transcribe+align. Basic speaker labeling enabled."
 
         if not segments:
             return {
@@ -93,9 +117,9 @@ def transcribe_with_roles(
                 "note": "Backend returned no segments.",
             }
 
-        segments = _attach_default_labels(segments)
+        segments = _attach_basic_diarization(segments)
         segments = _round_segments(segments, ndigits=2)
-        note += " Role inference: disabled (all segments use default labels)."
+        note += " Segments are labeled with basic alternating speaker tags (Speaker 1 / Speaker 2)."
 
         return {
             "mode": mode,

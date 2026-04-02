@@ -235,6 +235,9 @@
     .chip-ok { color: var(--ok); border-color: #c5ead6; background: #ecf9f1; }
     .chip-bad { color: var(--bad); border-color: #f1c9c9; background: #fdeeee; }
     .chip-warn { color: var(--warn); border-color: #f3d8ae; background: #fff3df; }
+    .sla-value-ok { color: var(--ok); }
+    .sla-value-warn { color: var(--warn); }
+    .sla-value-bad { color: var(--bad); }
 
     .workspace {
       height: calc(100vh - 210px);
@@ -631,7 +634,6 @@
       routingModelBusy: false,
       activeTab: 'review',
       showAddGroupForm: false,
-      showAddIntentForm: false,
       loginBanner: null,
       authBusy: false,
       authMode: 'login',
@@ -640,7 +642,13 @@
       auth: {
         token: '',
         user: null
-      }
+      },
+      appSettings: {
+        slaMinutes: 15,
+        updatedAt: ''
+      },
+      slaSaveBusy: false,
+      slaTickerStarted: false
     };
 
     const el = {
@@ -677,9 +685,11 @@
       load();
       loadAuth();
       bindEvents();
+      startSlaTicker();
       if (state.auth.token) {
         const restored = await restoreSession();
         if (restored) {
+          await loadAppSettings(true);
           await loadRoutingCatalog(true);
           await loadRoutingModelStatus(true);
           if (isAdmin()) {
@@ -835,6 +845,7 @@
         state.loginBanner = null;
         el.loginPassword.value = '';
 
+        await loadAppSettings(true);
         await loadRoutingCatalog(true);
         await loadRoutingModelStatus(true);
         if (isAdmin()) {
@@ -875,6 +886,263 @@
         state.loginBanner = { message: 'Session expired. Sign in again.', type: 'error' };
       }
       render();
+    }
+
+    function normalizeSlaMinutes(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return 15;
+      return Math.min(1440, Math.max(1, Math.round(numeric)));
+    }
+
+    function getCallById(callId) {
+      return state.calls.find((call) => call.id === callId) || null;
+    }
+
+    function ensureCallSla(call) {
+      if (!call || typeof call !== 'object') return null;
+      const startedAt = String(
+        call.sla && call.sla.startedAt
+          ? call.sla.startedAt
+          : (call.createdAt || new Date().toISOString())
+      );
+      const limitMinutes = normalizeSlaMinutes(call.sla && call.sla.limitMinutes);
+      let stoppedAt = String(call.sla && call.sla.stoppedAt || '').trim();
+      if (!stoppedAt && call.review && call.review.completedAt) {
+        stoppedAt = String(call.review.completedAt);
+      }
+      if (!stoppedAt && call.status === 'spam_blocked') {
+        stoppedAt = String(call.createdAt || '');
+      }
+      call.sla = {
+        limitMinutes,
+        startedAt,
+        stoppedAt
+      };
+      if (call.review && stoppedAt && !call.review.completedAt) {
+        call.review.completedAt = stoppedAt;
+      }
+      return call.sla;
+    }
+
+    function getSlaSnapshot(call, now) {
+      const currentTime = now instanceof Date ? now : new Date();
+      const sla = ensureCallSla(call);
+      if (!sla) {
+        return {
+          active: false,
+          limitMinutes: 15,
+          remainingMs: 15 * 60 * 1000,
+          tone: 'ok'
+        };
+      }
+
+      const startedAtMs = Date.parse(sla.startedAt || call.createdAt || currentTime.toISOString());
+      const stoppedAtMs = sla.stoppedAt ? Date.parse(sla.stoppedAt) : NaN;
+      const limitMs = normalizeSlaMinutes(sla.limitMinutes) * 60 * 1000;
+      const active = !sla.stoppedAt;
+      const effectiveEndMs = active
+        ? currentTime.getTime()
+        : (Number.isFinite(stoppedAtMs) ? stoppedAtMs : currentTime.getTime());
+      const safeStartedAtMs = Number.isFinite(startedAtMs) ? startedAtMs : currentTime.getTime();
+      const elapsedMs = Math.max(0, effectiveEndMs - safeStartedAtMs);
+      const remainingMs = limitMs - elapsedMs;
+
+      let tone = 'ok';
+      if (remainingMs < 0) {
+        tone = 'bad';
+      } else if (remainingMs <= Math.min(5 * 60 * 1000, limitMs / 3)) {
+        tone = 'warn';
+      }
+
+      return {
+        active,
+        limitMinutes: normalizeSlaMinutes(sla.limitMinutes),
+        remainingMs,
+        tone
+      };
+    }
+
+    function formatTimerDuration(milliseconds) {
+      const totalSeconds = Math.max(0, Math.floor(Math.abs(Number(milliseconds) || 0) / 1000));
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      }
+      return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function getSlaDisplay(call, now) {
+      const snapshot = getSlaSnapshot(call, now);
+      const timerText = formatTimerDuration(snapshot.remainingMs);
+
+      if (snapshot.remainingMs >= 0) {
+        return {
+          shortText: snapshot.active ? `SLA ${timerText} left` : `SLA ${timerText} frozen`,
+          longText: snapshot.active
+            ? `${snapshot.limitMinutes} min target • ${timerText} left`
+            : `${snapshot.limitMinutes} min target • frozen at ${timerText} left`,
+          tone: snapshot.tone
+        };
+      }
+
+      return {
+        shortText: snapshot.active ? `SLA +${timerText}` : `SLA +${timerText} frozen`,
+        longText: snapshot.active
+          ? `${snapshot.limitMinutes} min target • overdue by ${timerText}`
+          : `${snapshot.limitMinutes} min target • stopped overdue by ${timerText}`,
+        tone: snapshot.tone
+      };
+    }
+
+    function renderSlaChip(call) {
+      const display = getSlaDisplay(call, new Date());
+      const toneClass = display.tone === 'bad' ? 'chip-bad' : (display.tone === 'warn' ? 'chip-warn' : 'chip-ok');
+      return `<span class="chip js-sla-chip ${toneClass}" data-call-id="${escapeAttr(call.id)}">${escapeHtml(display.shortText)}</span>`;
+    }
+
+    function applySlaDisplay(node, text, tone, type) {
+      if (!node) return;
+      node.textContent = text;
+      node.classList.remove('chip-ok', 'chip-warn', 'chip-bad', 'sla-value-ok', 'sla-value-warn', 'sla-value-bad');
+      if (type === 'chip') {
+        node.classList.add(tone === 'bad' ? 'chip-bad' : (tone === 'warn' ? 'chip-warn' : 'chip-ok'));
+      } else {
+        node.classList.add(tone === 'bad' ? 'sla-value-bad' : (tone === 'warn' ? 'sla-value-warn' : 'sla-value-ok'));
+      }
+    }
+
+    function refreshSlaDisplays() {
+      if (!isAuthenticated()) return;
+      const now = new Date();
+
+      document.querySelectorAll('.js-sla-chip[data-call-id]').forEach((node) => {
+        const call = getCallById(node.dataset.callId);
+        if (!call) return;
+        const display = getSlaDisplay(call, now);
+        applySlaDisplay(node, display.shortText, display.tone, 'chip');
+      });
+
+      document.querySelectorAll('.js-sla-summary[data-call-id]').forEach((node) => {
+        const call = getCallById(node.dataset.callId);
+        if (!call) return;
+        const display = getSlaDisplay(call, now);
+        applySlaDisplay(node, display.longText, display.tone, 'summary');
+      });
+    }
+
+    function startSlaTicker() {
+      if (state.slaTickerStarted) return;
+      state.slaTickerStarted = true;
+      refreshSlaDisplays();
+      window.setInterval(() => {
+        refreshSlaDisplays();
+      }, 1000);
+    }
+
+    function normalizeSegmentRole(role) {
+      const raw = String(role || '').trim();
+      if (!raw) return '';
+      const normalized = raw.toLowerCase();
+      if (normalized === 'unknown' || normalized === 'role' || normalized === 'не определено') {
+        return '';
+      }
+      return raw;
+    }
+
+    function shouldShowRoleChip(role) {
+      return Boolean(normalizeSegmentRole(role));
+    }
+
+    function getSegmentSpeakerLabel(segment, index) {
+      const rawSpeaker = String(segment && segment.speaker || '').trim();
+      if (!rawSpeaker || /^unknown$/i.test(rawSpeaker)) {
+        return `Speaker ${(index % 2) + 1}`;
+      }
+
+      const speakerMatch = rawSpeaker.match(/^speaker\s*([1-9]\d*)$/i);
+      if (speakerMatch) {
+        const speakerNumber = Number(speakerMatch[1]);
+        return `Speaker ${speakerNumber <= 2 ? speakerNumber : ((speakerNumber - 1) % 2) + 1}`;
+      }
+
+      const diarizationMatch = rawSpeaker.match(/^speaker[_\s-]*0*(\d+)$/i);
+      if (diarizationMatch) {
+        const zeroBased = Number(diarizationMatch[1]);
+        return `Speaker ${(zeroBased % 2) + 1}`;
+      }
+
+      return rawSpeaker;
+    }
+
+    function renderTranscriptSegments(segments) {
+      if (!Array.isArray(segments) || segments.length === 0) {
+        return '<div class="empty">Transcript is empty.</div>';
+      }
+
+      return `
+        <div class="segments">
+          ${segments.map((segment, index) => {
+            const speakerLabel = getSegmentSpeakerLabel(segment, index);
+            const roleLabel = normalizeSegmentRole(segment && segment.role);
+            return `
+              <div class="segment">
+                <div class="segment-meta">
+                  <span>${formatSec(segment && segment.start)} - ${formatSec(segment && segment.end)} sec</span>
+                  <span class="chip">${escapeHtml(speakerLabel)}</span>
+                  ${shouldShowRoleChip(roleLabel) ? `<span class="chip">${escapeHtml(roleLabel)}</span>` : ''}
+                </div>
+                <div class="segment-text">${escapeHtml(segment && segment.text || '')}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function renderSlaSettingsBlock() {
+      const updatedAt = state.appSettings && state.appSettings.updatedAt
+        ? formatTime(state.appSettings.updatedAt)
+        : 'not saved yet';
+      return `
+        <section class="card">
+          <h3>SLA Settings</h3>
+          <div class="grid-2">
+            <div class="row">
+              <label>SLA target in minutes</label>
+              <input id="sla-minutes-input" type="number" min="1" max="1440" step="1" value="${escapeAttr(normalizeSlaMinutes(state.appSettings && state.appSettings.slaMinutes))}" />
+            </div>
+            <div class="help-note">
+              <strong>Current default:</strong> ${escapeHtml(String(normalizeSlaMinutes(state.appSettings && state.appSettings.slaMinutes)))} minutes<br />
+              <strong>Last updated:</strong> ${escapeHtml(updatedAt)}<br />
+              New calls inherit this SLA. Existing calls keep the value captured when they entered the queue.
+            </div>
+          </div>
+          <div class="toolbar">
+            <button id="save-sla-btn" class="btn btn-primary btn-mini" type="button" ${state.slaSaveBusy ? 'disabled' : ''}>Save SLA</button>
+            <button id="reload-sla-btn" class="btn btn-ghost btn-mini" type="button" ${state.slaSaveBusy ? 'disabled' : ''}>Reload</button>
+          </div>
+        </section>
+      `;
+    }
+
+    async function loadAppSettings(silent) {
+      try {
+        const payload = await apiJson('/api/v1/app-settings');
+        state.appSettings = {
+          slaMinutes: normalizeSlaMinutes(payload && payload.sla_minutes),
+          updatedAt: payload && payload.updated_at ? String(payload.updated_at) : ''
+        };
+      } catch (err) {
+        state.appSettings = {
+          slaMinutes: 15,
+          updatedAt: ''
+        };
+        if (!silent) {
+          setBanner('Failed to load app settings. Using default SLA 15 minutes.', 'error');
+        }
+      }
     }
 
     async function loadRoutingCatalog(silent) {
@@ -975,6 +1243,8 @@
       const intentMeta = getIntentMeta(suggestedIntentId);
       const defaultGroup = intentMeta ? intentMeta.default_group : (state.catalog.groups[0] ? state.catalog.groups[0].id : '');
       const defaultPriority = intentMeta ? intentMeta.priority : 'medium';
+      const slaMinutes = normalizeSlaMinutes(state.appSettings && state.appSettings.slaMinutes);
+      const autoStoppedAt = status === 'spam_blocked' ? now : '';
 
       return {
         id: crypto.randomUUID ? crypto.randomUUID() : 'call-' + Date.now(),
@@ -991,13 +1261,19 @@
           priority: normalizePriority(routing.priority || defaultPriority),
           group: routing.suggested_group || defaultGroup,
           errorType: 'none',
-          comment: ''
+          comment: '',
+          completedAt: autoStoppedAt
         },
         aiSuggestion: {
           intentId: suggestedIntentId,
           confidence: routing.intent_confidence,
           priority: normalizePriority(routing.priority || defaultPriority),
           group: routing.suggested_group || defaultGroup
+        },
+        sla: {
+          limitMinutes: slaMinutes,
+          startedAt: now,
+          stoppedAt: autoStoppedAt
         }
       };
     }
@@ -1037,6 +1313,7 @@
       renderWorkspace();
       renderActions();
       renderTabs();
+      refreshSlaDisplays();
     }
 
     function renderAuth() {
@@ -1119,6 +1396,7 @@
         }
 
         const groupChip = '<span class="chip">' + escapeHtml(call.review.group || 'unassigned') + '</span>';
+        const slaChip = renderSlaChip(call);
 
         return (
           '<li class="call-item ' + active + '" data-id="' + call.id + '">' +
@@ -1126,7 +1404,7 @@
               '<div class="call-name">' + escapeHtml(call.sourceFilename) + '</div>' +
               '<div class="call-time">' + formatTime(call.createdAt) + '</div>' +
             '</div>' +
-            '<div class="chips">' + decisionChip + groupChip + '</div>' +
+            '<div class="chips">' + decisionChip + groupChip + slaChip + '</div>' +
           '</li>'
         );
       }).join('');
@@ -1169,6 +1447,7 @@
             <div class="kv"><div class="k">Call ID</div><div class="v">${escapeHtml(call.callId || '-')}</div></div>
             <div class="kv"><div class="k">Segments</div><div class="v">${segments.length}</div></div>
             <div class="kv"><div class="k">Status</div><div class="v">${escapeHtml(call.status || 'completed')}</div></div>
+            <div class="kv"><div class="k">SLA</div><div class="v js-sla-summary" data-call-id="${escapeAttr(call.id)}">-</div></div>
           </div>
         </section>
       `;
@@ -1199,20 +1478,7 @@
         const transcriptBlock = `
           <section class="card">
             <h3>Transcript</h3>
-            <div class="segments">
-              ${segments.length === 0 ? '<div class="empty">No transcript segments for this call.</div>' : segments.map((seg) => {
-                return (
-                  '<div class="segment">' +
-                    '<div class="segment-meta">' +
-                      '<span>' + formatSec(seg.start) + 's - ' + formatSec(seg.end) + 's</span>' +
-                      '<span class="chip">' + escapeHtml(seg.speaker || 'speaker') + '</span>' +
-                      '<span class="chip">' + escapeHtml(seg.role || 'role') + '</span>' +
-                    '</div>' +
-                    '<div class="segment-text">' + escapeHtml(seg.text || '') + '</div>' +
-                  '</div>'
-                );
-              }).join('')}
-            </div>
+            ${renderTranscriptSegments(segments)}
           </section>
         `;
 
@@ -1251,7 +1517,7 @@
               <div class="row">
                 <label>Intent preset</label>
                 <select id="intent-preset">
-                  <option value="">Custom value</option>
+                  <option value="">Select existing intent</option>
                   ${intentOptions.map((intent) => {
                     const selected = intent.id === call.review.intentId ? 'selected' : '';
                     return `<option value="${escapeAttr(intent.id)}" ${selected}>${escapeHtml(intent.title)} (${escapeHtml(intent.id)})</option>`;
@@ -1260,7 +1526,7 @@
               </div>
               <div class="row">
                 <label>Final intent id</label>
-                <input id="review-intent" value="${escapeAttr(call.review.intentId)}" />
+                <input id="review-intent" value="${escapeAttr(call.review.intentId)}" readonly />
               </div>
               <div class="row">
                 <label>Final priority</label>
@@ -1305,20 +1571,7 @@
       const transcriptBlock = `
         <section class="card">
           <h3>Transcript</h3>
-          <div class="segments">
-            ${segments.length === 0 ? '<div class="empty">No transcript segments for this call.</div>' : segments.map((seg) => {
-              return (
-                '<div class="segment">' +
-                  '<div class="segment-meta">' +
-                    '<span>' + formatSec(seg.start) + 's - ' + formatSec(seg.end) + 's</span>' +
-                    '<span class="chip">' + escapeHtml(seg.speaker || 'speaker') + '</span>' +
-                    '<span class="chip">' + escapeHtml(seg.role || 'role') + '</span>' +
-                  '</div>' +
-                  '<div class="segment-text">' + escapeHtml(seg.text || '') + '</div>' +
-                '</div>'
-              );
-            }).join('')}
-          </div>
+          ${renderTranscriptSegments(segments)}
         </section>
       `;
 
@@ -1367,8 +1620,8 @@
       const trainRecall = typeof valMetrics.macro_recall === 'number' ? valMetrics.macro_recall.toFixed(3) : '-';
       const trainBusy = Boolean(modelStatus.training_in_progress || state.routingModelBusy);
       const groupFormClass = state.showAddGroupForm ? 'collapsible-form' : 'collapsible-form hidden';
-      const intentFormClass = state.showAddIntentForm ? 'collapsible-form' : 'collapsible-form hidden';
       return `
+        ${renderSlaSettingsBlock()}
         <section class="card">
           <h3>Routing Catalog Management</h3>
           <div class="toolbar">
@@ -1428,6 +1681,9 @@
             <div>
               <div class="row">
                 <label>Intents (${intents.length})</label>
+                <div class="help-note">
+                  New intents are locked to keep routing-model labels stable. Admins can review or delete existing intents, but cannot create new ones from the UI.
+                </div>
                 <div class="catalog-list">
                   ${intents.length === 0 ? '<div class="catalog-item-sub">No intents configured.</div>' : intents.map((intent) => `
                     <div class="catalog-item">
@@ -1442,45 +1698,6 @@
                   `).join('')}
                 </div>
               </div>
-              <button id="toggle-add-intent-form-btn" class="btn btn-primary btn-mini" type="button">${state.showAddIntentForm ? 'Hide Intent Form' : 'Add Intent'}</button>
-              <form id="add-intent-form" class="${intentFormClass}">
-                <div class="row">
-                  <label>New intent id</label>
-                  <input id="add-intent-id" placeholder="cooperation" />
-                </div>
-                <div class="row">
-                  <label>Intent title</label>
-                  <input id="add-intent-title" placeholder="Сотрудничество" />
-                </div>
-                <div class="row">
-                  <label>Default group</label>
-                  <select id="add-intent-group">
-                    ${groups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.title)} (${escapeHtml(group.id)})</option>`).join('')}
-                  </select>
-                </div>
-                <div class="row">
-                  <label>Priority</label>
-                  <select id="add-intent-priority">
-                    ${PRIORITY_PRESETS.map((value) => `<option value="${value}">${value}</option>`).join('')}
-                  </select>
-                </div>
-                <div class="row">
-                  <label>Examples (one per line)</label>
-                  <textarea id="add-intent-examples" placeholder="хотим пригласить вашу компанию на конференцию"></textarea>
-                </div>
-                <div class="row">
-                  <label>Description</label>
-                  <input id="add-intent-description" placeholder="Optional description" />
-                </div>
-                <div class="row">
-                  <label>Tags (comma-separated)</label>
-                  <input id="add-intent-tags" placeholder="partner, consulting" />
-                </div>
-                <div class="toolbar">
-                  <button class="btn btn-primary btn-mini" type="submit">Create Intent</button>
-                  <button id="cancel-add-intent-form-btn" class="btn btn-ghost btn-mini" type="button">Cancel</button>
-                </div>
-              </form>
             </div>
           </div>
         </section>
@@ -1583,12 +1800,6 @@
         renderCallsList();
       });
 
-      intentInput.addEventListener('input', () => {
-        call.review.intentId = intentInput.value.trim();
-        persist();
-        renderCallsList();
-      });
-
       priorityInput.addEventListener('change', () => {
         call.review.priority = priorityInput.value;
         persist();
@@ -1613,6 +1824,49 @@
     }
 
     function bindCatalogInputs() {
+      const saveSlaBtn = document.getElementById('save-sla-btn');
+      if (saveSlaBtn) {
+        saveSlaBtn.addEventListener('click', async () => {
+          const input = document.getElementById('sla-minutes-input');
+          const rawValue = input ? input.value.trim() : '';
+          const numericValue = Number(rawValue);
+          if (!Number.isFinite(numericValue) || numericValue < 1 || numericValue > 1440) {
+            setBanner('SLA minutes must be between 1 and 1440.', 'error');
+            return;
+          }
+
+          state.slaSaveBusy = true;
+          render();
+          try {
+            const payload = await apiJson('/api/v1/app-settings', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sla_minutes: Math.round(numericValue) })
+            });
+            state.appSettings = {
+              slaMinutes: normalizeSlaMinutes(payload && payload.sla_minutes),
+              updatedAt: payload && payload.updated_at ? String(payload.updated_at) : ''
+            };
+            render();
+            setBanner('SLA updated. New calls will use ' + state.appSettings.slaMinutes + ' minutes.', 'ok');
+          } catch (err) {
+            setBanner(String(err.message || err), 'error');
+          } finally {
+            state.slaSaveBusy = false;
+            render();
+          }
+        });
+      }
+
+      const reloadSlaBtn = document.getElementById('reload-sla-btn');
+      if (reloadSlaBtn) {
+        reloadSlaBtn.addEventListener('click', async () => {
+          await loadAppSettings(false);
+          render();
+          setBanner('SLA settings refreshed from server.', 'ok');
+        });
+      }
+
       const toggleGroupFormBtn = document.getElementById('toggle-add-group-form-btn');
       if (toggleGroupFormBtn) {
         toggleGroupFormBtn.addEventListener('click', () => {
@@ -1621,26 +1875,10 @@
         });
       }
 
-      const toggleIntentFormBtn = document.getElementById('toggle-add-intent-form-btn');
-      if (toggleIntentFormBtn) {
-        toggleIntentFormBtn.addEventListener('click', () => {
-          state.showAddIntentForm = !state.showAddIntentForm;
-          render();
-        });
-      }
-
       const cancelAddGroupFormBtn = document.getElementById('cancel-add-group-form-btn');
       if (cancelAddGroupFormBtn) {
         cancelAddGroupFormBtn.addEventListener('click', () => {
           state.showAddGroupForm = false;
-          render();
-        });
-      }
-
-      const cancelAddIntentFormBtn = document.getElementById('cancel-add-intent-form-btn');
-      if (cancelAddIntentFormBtn) {
-        cancelAddIntentFormBtn.addEventListener('click', () => {
-          state.showAddIntentForm = false;
           render();
         });
       }
@@ -1774,54 +2012,6 @@
             state.showAddGroupForm = false;
             render();
             setBanner('Routing group created.', 'ok');
-          } catch (err) {
-            setBanner(String(err.message || err), 'error');
-          }
-        });
-      }
-
-      const addIntentForm = document.getElementById('add-intent-form');
-      if (addIntentForm) {
-        addIntentForm.addEventListener('submit', async (event) => {
-          event.preventDefault();
-          const id = document.getElementById('add-intent-id').value.trim();
-          const title = document.getElementById('add-intent-title').value.trim();
-          const default_group = document.getElementById('add-intent-group').value.trim();
-          const priority = document.getElementById('add-intent-priority').value;
-          const examples = document.getElementById('add-intent-examples').value
-            .split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean);
-          const description = document.getElementById('add-intent-description').value.trim();
-          const tags = document.getElementById('add-intent-tags').value
-            .split(',')
-            .map((tag) => tag.trim())
-            .filter(Boolean);
-
-          if (!id || !title || !default_group || examples.length === 0) {
-            setBanner('Intent id, title, default group and at least one example are required.', 'error');
-            return;
-          }
-
-          try {
-            const catalog = await apiJson('/api/v1/routing-config/intents', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                id,
-                title,
-                default_group,
-                priority,
-                examples,
-                description,
-                tags
-              })
-            });
-            state.catalog = normalizeCatalog(catalog);
-            addIntentForm.reset();
-            state.showAddIntentForm = false;
-            render();
-            setBanner('Routing intent created.', 'ok');
           } catch (err) {
             setBanner(String(err.message || err), 'error');
           }
@@ -1967,7 +2157,15 @@
         call.review.decision = 'accepted';
       }
 
+      const finishedAt = call.review.completedAt || new Date().toISOString();
+      call.review.completedAt = finishedAt;
+      ensureCallSla(call);
+      if (!call.sla.stoppedAt) {
+        call.sla.stoppedAt = finishedAt;
+      }
+
       persist();
+      render();
       try {
         const feedbackPayload = makeFeedbackPayload(call);
         const feedbackResponse = await apiJson('/api/v1/routing-feedback', {
@@ -2026,6 +2224,17 @@
         updated.createdAt = call.createdAt;
         updated.sourceFilename = call.sourceFilename;
         updated.lastFeedback = call.lastFeedback;
+        const preservedSla = ensureCallSla(call);
+        const preservedStartedAt = preservedSla && preservedSla.startedAt ? preservedSla.startedAt : updated.createdAt;
+        const preservedLimitMinutes = normalizeSlaMinutes(preservedSla && preservedSla.limitMinutes);
+        const shouldFreezeSla = updated.status === 'spam_blocked';
+        const updatedStopTime = shouldFreezeSla ? new Date().toISOString() : '';
+        updated.review.completedAt = updatedStopTime;
+        updated.sla = {
+          limitMinutes: preservedLimitMinutes,
+          startedAt: preservedStartedAt,
+          stoppedAt: updatedStopTime
+        };
 
         const index = state.calls.findIndex((item) => item.id === call.id);
         if (index >= 0) {
@@ -2169,9 +2378,9 @@
           priority: 'medium',
           group: '',
           errorType: 'none',
-          comment: ''
+          comment: '',
+          completedAt: ''
         };
-        return call;
       }
       call.review.errorType = call.review.errorType || 'none';
       if (!call.review.decision) call.review.decision = 'pending';
@@ -2179,6 +2388,7 @@
       if (!call.review.intentId) call.review.intentId = 'misc.triage';
       if (!call.review.group) call.review.group = '';
       if (typeof call.review.comment !== 'string') call.review.comment = '';
+      if (typeof call.review.completedAt !== 'string') call.review.completedAt = '';
       if (!call.aiSuggestion || typeof call.aiSuggestion !== 'object') {
         call.aiSuggestion = {
           intentId: 'misc.triage',
@@ -2187,6 +2397,7 @@
           group: ''
         };
       }
+      ensureCallSla(call);
       return call;
     }
 

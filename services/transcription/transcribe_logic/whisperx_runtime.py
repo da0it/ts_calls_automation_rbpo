@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Dict, List, Tuple
 
+from transcribe_logic.whisperx_device import resolve_whisperx_device
 from transcribe_logic.whisperx_worker import (
     _to_segments,
 )
@@ -75,6 +76,7 @@ def warmup_whisperx_runtime(
     """
     Optional server startup warmup to keep first request latency lower.
     """
+    device = resolve_whisperx_device(device)
     whisperx = _load_whisperx()
 
     with _CACHE_LOCK:
@@ -94,11 +96,12 @@ def whisperx_transcribe_inprocess(
     *,
     model: str = "large-v3",
     language: str = "ru",
-    device: str = "cpu",
+    device: str = "auto",
     compute_type: str = "int8",
     batch_size: int = 4,
     vad_method: str = "silero",
 ) -> List[Dict[str, Any]]:
+    device = resolve_whisperx_device(device)
     whisperx = _load_whisperx()
 
     with _CACHE_LOCK:

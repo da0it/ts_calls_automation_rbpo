@@ -4,8 +4,13 @@ import argparse
 import json
 from typing import Any, Dict, List
 
+try:
+    from transcribe_logic.whisperx_device import resolve_whisperx_device
+except ImportError:
+    from whisperx_device import resolve_whisperx_device
 
-UNKNOWN_SPEAKER = "UNKNOWN"
+
+UNKNOWN_SPEAKER = ""
 
 
 def _to_segments(result: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -32,11 +37,12 @@ def main() -> None:
     parser.add_argument("--out-json", required=True)
     parser.add_argument("--model", default="large-v3")
     parser.add_argument("--language", default="ru")
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--device", default="auto")
     parser.add_argument("--compute-type", default="int8")
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--vad-method", default="silero", choices=["silero", "pyannote"])
     args = parser.parse_args()
+    device = resolve_whisperx_device(args.device)
 
     try:
         import whisperx
@@ -52,23 +58,23 @@ def main() -> None:
         "vad_method": args.vad_method,
     }
     try:
-        model = whisperx.load_model(args.model, args.device, **load_model_kwargs)
+        model = whisperx.load_model(args.model, device, **load_model_kwargs)
     except TypeError:
         # Backward compatibility for whisperx versions without vad_method arg.
         load_model_kwargs.pop("vad_method", None)
-        model = whisperx.load_model(args.model, args.device, **load_model_kwargs)
+        model = whisperx.load_model(args.model, device, **load_model_kwargs)
     result = model.transcribe(audio, batch_size=args.batch_size, language=args.language)
 
     align_model, metadata = whisperx.load_align_model(
         language_code=result["language"],
-        device=args.device,
+        device=device,
     )
     result = whisperx.align(
         result["segments"],
         align_model,
         metadata,
         audio,
-        args.device,
+        device,
         return_char_alignments=False,
     )
 

@@ -198,6 +198,11 @@ func (s *RoutingFeedbackService) normalizeAndValidate(input RoutingFeedbackReque
 	if finalGroup == "" {
 		return nil, errors.New("final.group is required")
 	}
+	if s.configService != nil {
+		if err := s.configService.ValidateFeedbackTarget(finalIntent, finalGroup); err != nil {
+			return nil, err
+		}
+	}
 
 	callID := strings.TrimSpace(input.CallID)
 	if callID == "" {

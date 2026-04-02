@@ -18,6 +18,7 @@ import (
 
 type ProcessHandler struct {
 	orchestrator           *services.OrchestratorService
+	appSettingsService     *services.AppSettingsService
 	routingConfigService   *services.RoutingConfigService
 	routingFeedbackService *services.RoutingFeedbackService
 	spamFeedbackService    *services.SpamFeedbackService
@@ -43,6 +44,7 @@ func envBool(name string, def bool) bool {
 
 func NewProcessHandler(
 	orchestrator *services.OrchestratorService,
+	appSettingsService *services.AppSettingsService,
 	routingConfigService *services.RoutingConfigService,
 	routingFeedbackService *services.RoutingFeedbackService,
 	spamFeedbackService *services.SpamFeedbackService,
@@ -55,6 +57,7 @@ func NewProcessHandler(
 
 	return &ProcessHandler{
 		orchestrator:           orchestrator,
+		appSettingsService:     appSettingsService,
 		routingConfigService:   routingConfigService,
 		routingFeedbackService: routingFeedbackService,
 		spamFeedbackService:    spamFeedbackService,
@@ -390,9 +393,10 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 		"description": "Оркестрирует обработку звонков через все модули системы",
 		"endpoints": gin.H{
 			"process_call":     "POST /api/v1/process-call",
+			"app_settings":     "GET /api/v1/app-settings, PUT /api/v1/app-settings (admin)",
 			"routing_config":   "GET/PUT /api/v1/routing-config",
 			"routing_groups":   "POST/DELETE /api/v1/routing-config/groups",
-			"routing_intents":  "POST/DELETE /api/v1/routing-config/intents",
+			"routing_intents":  "DELETE /api/v1/routing-config/intents/:id",
 			"routing_feedback": "POST /api/v1/routing-feedback",
 			"spam_review":      "POST /api/v1/spam-review",
 			"routing_model":    "GET /api/v1/routing-model/status, POST /api/v1/routing-model/reload, POST /api/v1/routing-model/train, POST /api/v1/routing-model/train-csv",
