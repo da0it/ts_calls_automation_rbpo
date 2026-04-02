@@ -56,6 +56,23 @@ type TicketSummary struct {
 	UrgencyReason     string   `json:"urgency_reason,omitempty"`
 }
 
+type TicketServiceMetadata struct {
+	Source        string    `json:"source"`
+	Component     string    `json:"component"`
+	SchemaVersion string    `json:"schema_version"`
+	SentAt        time.Time `json:"sent_at"`
+	CallID        string    `json:"call_id"`
+	IntentID      string    `json:"intent_id,omitempty"`
+	Priority      string    `json:"priority,omitempty"`
+}
+
+type TicketSystemPayload struct {
+	Service TicketServiceMetadata `json:"service"`
+	Request CreateTicketRequest   `json:"request"`
+	Summary *TicketSummary        `json:"summary,omitempty"`
+	Draft   *TicketDraft          `json:"draft"`
+}
+
 // TicketDraft черновик тикета
 type TicketDraft struct {
 	Title        string                 `json:"title"`

@@ -105,7 +105,7 @@ func (staticSummarizer) GenerateSummary(
 
 type failingTicketAdapter struct{}
 
-func (failingTicketAdapter) CreateTicket(draft *models.TicketDraft) (*models.TicketCreated, error) {
+func (failingTicketAdapter) CreateTicket(payload *models.TicketSystemPayload) (*models.TicketCreated, error) {
 	return nil, errors.New("stop after draft")
 }
 

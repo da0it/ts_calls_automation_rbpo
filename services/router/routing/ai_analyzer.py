@@ -32,7 +32,8 @@ class AIAnalyzer:
 class RubertEmbeddingAnalyzer(AIAnalyzer):
     """
     Router analyzer in a simplified "fine-tuned model only" mode.
-    If no fine-tuned model is available or confidence is too low, routes to misc.triage.
+    If no fine-tuned model is available, routes to misc.triage.
+    Low-confidence predictions are returned as-is and can be sent to manual review upstream.
     """
 
     def __init__(
@@ -164,24 +165,32 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         best_idx = int(torch.argmax(probs).item())
         best_intent_id = intent_ids[best_idx]
         confidence = float(probs[best_idx].item())
-
-        if confidence < self.min_confidence:
-            return self._triage_result(
-                reason=f"low_confidence:{confidence:.3f}",
-                processing_time_ms=(time.time() - started) * 1000.0,
-                text_len=len(text),
-                prep_meta=prep.meta,
-                model_meta={"spam_gate": spam_meta, "spam_decision": spam_decision, "stage2": meta},
-            )
-
         meta_intent = allowed_intents.get(best_intent_id, {})
         priority = self._normalize_priority(meta_intent.get("priority", "medium"))
         default_group = str(meta_intent.get("default_group") or "").strip()
         targets = [{"type": "group", "id": default_group, "confidence": confidence}] if default_group else []
-
         top_k = min(3, len(intent_ids))
         top_indices = torch.topk(probs, k=top_k).indices.tolist()
         top3_intents = [{"intent": intent_ids[int(i)], "score": float(probs[int(i)].item())} for i in top_indices]
+
+        if confidence < self.min_confidence:
+            return self._low_confidence_result(
+                intent_id=best_intent_id,
+                confidence=confidence,
+                priority=priority,
+                suggested_targets=targets,
+                processing_time_ms=(time.time() - started) * 1000.0,
+                text_len=len(text),
+                prep_meta=prep.meta,
+                model_meta={
+                    "spam_gate": spam_meta,
+                    "spam_decision": spam_decision,
+                    "stage2": meta,
+                    "top3_intents": top3_intents,
+                    "review_required": True,
+                    "review_reason": f"low_confidence:{confidence:.3f}",
+                },
+            )
 
         analysis = AIAnalysis(
             intent=IntentResult(
@@ -268,6 +277,38 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             suggested_targets=[{"type": "group", "id": "technical_support", "confidence": 0.0}],
             raw={
                 "mode": "finetuned_only",
+                "model_version": self.model_name,
+                "device": self.device,
+                "processing_time_ms": round(processing_time_ms, 2),
+                "text_length": text_len,
+                "prep_meta": prep_meta,
+                "finetuned_model": model_meta,
+            },
+        )
+
+    def _low_confidence_result(
+        self,
+        *,
+        intent_id: str,
+        confidence: float,
+        priority: Priority,
+        suggested_targets: list[dict[str, Any]],
+        processing_time_ms: float,
+        text_len: int,
+        prep_meta: Dict[str, Any],
+        model_meta: Dict[str, Any],
+    ) -> AIAnalysis:
+        return AIAnalysis(
+            intent=IntentResult(
+                intent_id=intent_id,
+                confidence=confidence,
+                evidence=[],
+                notes=f"low_confidence_review_required:{confidence:.3f}",
+            ),
+            priority=priority,
+            suggested_targets=suggested_targets,
+            raw={
+                "mode": "finetuned_low_confidence_review",
                 "model_version": self.model_name,
                 "device": self.device,
                 "processing_time_ms": round(processing_time_ms, 2),

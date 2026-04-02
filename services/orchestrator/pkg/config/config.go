@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -28,6 +29,7 @@ type Config struct {
 	TicketRPCTimeoutSeconds   int
 	NotificationGRPCAddr      string
 	EntityServiceURL          string
+	RoutingReviewConfidenceThreshold float64
 	RoutingIntentsPath        string
 	RoutingGroupsPath         string
 	RoutingFeedbackPath       string
@@ -67,6 +69,7 @@ func Load() *Config {
 		TicketRPCTimeoutSeconds:   getEnvInt("TICKET_RPC_TIMEOUT_SECONDS", 300),
 		NotificationGRPCAddr:      getEnv("NOTIFICATION_GRPC_ADDR", "localhost:50055"),
 		EntityServiceURL:          getEnv("ENTITY_SERVICE_URL", "http://localhost:5001"),
+		RoutingReviewConfidenceThreshold: getEnvFloat("ROUTING_REVIEW_CONFIDENCE_THRESHOLD", getEnvFloat("ROUTER_MIN_CONFIDENCE", 0.5)),
 		RoutingIntentsPath:        getEnv("ROUTING_INTENTS_PATH", "../router/configs/intents.json"),
 		RoutingGroupsPath:         getEnv("ROUTING_GROUPS_PATH", "../router/configs/groups.json"),
 		RoutingFeedbackPath:       getEnv("ROUTING_FEEDBACK_PATH", "./data/routing_feedback.jsonl"),
@@ -102,6 +105,7 @@ func Load() *Config {
 	log.Printf("  - Ticket RPC timeout (sec): %d", cfg.TicketRPCTimeoutSeconds)
 	log.Printf("  - Notification gRPC: %s", cfg.NotificationGRPCAddr)
 	log.Printf("  - Entity service URL: %s", cfg.EntityServiceURL)
+	log.Printf("  - Routing review confidence threshold: %.3f", cfg.RoutingReviewConfidenceThreshold)
 	log.Printf("  - Routing intents path: %s", cfg.RoutingIntentsPath)
 	log.Printf("  - Routing groups path: %s", cfg.RoutingGroupsPath)
 	log.Printf("  - Routing feedback path: %s", cfg.RoutingFeedbackPath)
@@ -130,6 +134,16 @@ func getEnvInt(key string, defaultValue int) int {
 		var parsed int
 		_, err := fmt.Sscanf(value, "%d", &parsed)
 		if err == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func getEnvFloat(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err == nil {
 			return parsed
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"ticket_module/internal/adapters"
 	"ticket_module/internal/clients"
@@ -71,9 +72,10 @@ func (s *TicketCreatorService) CreateTicket(req *models.CreateTicketRequest) (*m
 
 	// 3. Формируем черновик тикета
 	draft := s.buildTicketDraft(req, summary, entities)
+	payload := buildTicketSystemPayload(req, draft, summary, entities)
 
 	// 4. Создаем тикет в внешней системе (Mock/Jira/Redmine)
-	created, err := s.ticketAdapter.CreateTicket(draft)
+	created, err := s.ticketAdapter.CreateTicket(payload)
 	if err != nil {
 		return nil, fmt.Errorf("create ticket in external system: %w", err)
 	}
@@ -192,6 +194,35 @@ func appendEntityDetails(description string, entities *models.Entities) string {
 		return extraInfo
 	}
 	return description + "\n\n" + extraInfo
+}
+
+func buildTicketSystemPayload(
+	req *models.CreateTicketRequest,
+	draft *models.TicketDraft,
+	summary *models.TicketSummary,
+	entities *models.Entities,
+) *models.TicketSystemPayload {
+	requestCopy := models.CreateTicketRequest{
+		Transcript: req.Transcript,
+		Routing:    req.Routing,
+		Entities:   entities,
+		AudioURL:   req.AudioURL,
+	}
+
+	return &models.TicketSystemPayload{
+		Service: models.TicketServiceMetadata{
+			Source:        "ts_calls_automation",
+			Component:     "ticket_creation",
+			SchemaVersion: "v1",
+			SentAt:        time.Now().UTC(),
+			CallID:        req.Transcript.CallID,
+			IntentID:      req.Routing.IntentID,
+			Priority:      req.Routing.Priority,
+		},
+		Request: requestCopy,
+		Summary: summary,
+		Draft:   draft,
+	}
 }
 
 // GetTicket получает информацию о тикете

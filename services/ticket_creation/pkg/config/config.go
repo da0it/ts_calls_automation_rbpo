@@ -30,12 +30,21 @@ type Config struct {
 	OllamaNumPredict         int
 
 	// Ticket systems
-	TicketSystem  string //so, mock
-	JiraURL       string
-	JiraUser      string
-	JiraAPIToken  string
-	RedmineURL    string
-	RedmineAPIKey string
+	TicketSystem         string // so, mock, simpleone
+	JiraURL              string
+	JiraUser             string
+	JiraAPIToken         string
+	RedmineURL           string
+	RedmineAPIKey        string
+	TicketWebhookURL     string
+	TicketWebhookHeaders string
+	TicketWebhookSystem  string
+	TicketWebhookIDPath  string
+	TicketWebhookURLPath string
+	TicketWebhookTimeout int
+	SimpleOneEndpointURL string
+	SimpleOneBearerToken string
+	SimpleOneTimeoutSecs int
 
 	TicketIncludePIIInDescription bool
 }
@@ -56,6 +65,15 @@ func Load() *Config {
 		OllamaTemperature:             getEnvFloat("OLLAMA_TEMPERATURE", 0.0),
 		OllamaNumPredict:              getEnvInt("OLLAMA_NUM_PREDICT", 48),
 		TicketSystem:                  getEnv("TICKET_SYSTEM", "mock"),
+		TicketWebhookURL:              getEnv("TICKET_WEBHOOK_URL", ""),
+		TicketWebhookHeaders:          getEnv("TICKET_WEBHOOK_HEADERS_JSON", ""),
+		TicketWebhookSystem:           getEnv("TICKET_WEBHOOK_SYSTEM_NAME", "webhook"),
+		TicketWebhookIDPath:           getEnv("TICKET_WEBHOOK_EXTERNAL_ID_PATH", ""),
+		TicketWebhookURLPath:          getEnv("TICKET_WEBHOOK_URL_PATH", ""),
+		TicketWebhookTimeout:          getEnvInt("TICKET_WEBHOOK_TIMEOUT_SECONDS", 30),
+		SimpleOneEndpointURL:          getEnv("SIMPLEONE_ENDPOINT_URL", ""),
+		SimpleOneBearerToken:          getEnv("SIMPLEONE_BEARER_TOKEN", ""),
+		SimpleOneTimeoutSecs:          getEnvInt("SIMPLEONE_TIMEOUT_SECONDS", 30),
 		TicketIncludePIIInDescription: getEnvBool("TICKET_INCLUDE_PII_IN_DESCRIPTION", false),
 	}
 }

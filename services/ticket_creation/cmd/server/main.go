@@ -55,6 +55,33 @@ func main() {
 	case "mock":
 		ticketAdapter = adapters.NewMockAdapter()
 		log.Println("Using Mock ticket adapter")
+	case "webhook":
+		headers, headerErr := adapters.ParseHeadersJSON(cfg.TicketWebhookHeaders)
+		if headerErr != nil {
+			log.Fatalf("Failed to parse webhook headers: %v", headerErr)
+		}
+		ticketAdapter, err = adapters.NewWebhookAdapter(adapters.WebhookAdapterConfig{
+			EndpointURL:    cfg.TicketWebhookURL,
+			Headers:        headers,
+			Timeout:        time.Duration(cfg.TicketWebhookTimeout) * time.Second,
+			SystemName:     cfg.TicketWebhookSystem,
+			ExternalIDPath: cfg.TicketWebhookIDPath,
+			URLPath:        cfg.TicketWebhookURLPath,
+		})
+		if err != nil {
+			log.Fatalf("Failed to configure webhook adapter: %v", err)
+		}
+		log.Printf("Using generic webhook ticket adapter: %s", cfg.TicketWebhookURL)
+	case "simpleone":
+		ticketAdapter, err = adapters.NewSimpleOneAdapter(adapters.SimpleOneAdapterConfig{
+			EndpointURL: cfg.SimpleOneEndpointURL,
+			BearerToken: cfg.SimpleOneBearerToken,
+			Timeout:     time.Duration(cfg.SimpleOneTimeoutSecs) * time.Second,
+		})
+		if err != nil {
+			log.Fatalf("Failed to configure SimpleOne adapter: %v", err)
+		}
+		log.Printf("Using SimpleOne ticket adapter: %s", cfg.SimpleOneEndpointURL)
 	default:
 		ticketAdapter = adapters.NewMockAdapter()
 		log.Printf("Unknown ticket system '%s', using Mock", cfg.TicketSystem)

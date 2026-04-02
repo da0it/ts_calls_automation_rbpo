@@ -100,6 +100,7 @@ func main() {
 		ticketClient,
 		notificationClient,
 		entityClient,
+		cfg.RoutingReviewConfidenceThreshold,
 	)
 
 	log.Println("✓ Orchestrator service initialized")
@@ -258,6 +259,7 @@ func setupRouter(
 		api.GET("/auth/me", auth.Me)
 		api.POST("/process-call", h.ProcessCall)
 		api.POST("/spam-review", h.ResolveSpamReview)
+		api.POST("/routing-review", h.ResolveRoutingReview)
 		api.GET("/app-settings", h.GetAppSettings)
 		api.GET("/routing-config", h.GetRoutingConfig)
 		api.POST("/routing-feedback", h.SaveRoutingFeedback)

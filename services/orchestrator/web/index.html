@@ -663,6 +663,7 @@
       authBusy: false,
       authMode: 'login',
       spamReviewBusy: false,
+      routingReviewBusy: false,
       users: [],
       auth: {
         token: '',
@@ -732,8 +733,8 @@
       el.logoutBtn.addEventListener('click', onLogoutClick);
       el.form.addEventListener('submit', onProcessSubmit);
       el.clearBtn.addEventListener('click', clearAllCalls);
-      el.acceptBtn.addEventListener('click', () => applyDecision('accepted'));
-      el.rejectBtn.addEventListener('click', () => applyDecision('rejected'));
+      el.acceptBtn.addEventListener('click', onAcceptClick);
+      el.rejectBtn.addEventListener('click', onRejectClick);
       el.saveBtn.addEventListener('click', () => saveDecision());
       el.exportBtn.addEventListener('click', exportCurrentCall);
       el.copyBtn.addEventListener('click', copyCurrentCall);
@@ -1320,6 +1321,10 @@
       return Boolean(call && call.status === 'awaiting_spam_review');
     }
 
+    function isAwaitingRoutingReview(call) {
+      return Boolean(call && call.status === 'awaiting_routing_review');
+    }
+
     function isSpamBlockedCall(call) {
       return Boolean(call && call.status === 'spam_blocked');
     }
@@ -1411,6 +1416,8 @@
         let decisionChip = '<span class="chip chip-warn">pending</span>';
         if (isAwaitingSpamReview(call)) {
           decisionChip = '<span class="chip chip-warn">spam review</span>';
+        } else if (isAwaitingRoutingReview(call)) {
+          decisionChip = '<span class="chip chip-warn">routing review</span>';
         } else if (isSpamBlockedCall(call)) {
           decisionChip = '<span class="chip chip-bad">spam blocked</span>';
         } else if (call.review.decision === 'accepted') {
@@ -2164,6 +2171,14 @@
       const call = getSelectedCall();
       if (!call || !canReviewRouting(call)) return;
 
+      applyDecisionToCall(call, decision);
+      persist();
+      render();
+      setBanner('Decision set to "' + decision + '".', 'ok');
+    }
+
+    function applyDecisionToCall(call, decision) {
+      if (!call || !canReviewRouting(call)) return;
       if (decision === 'accepted') {
         call.review.intentId = call.aiSuggestion.intentId || call.review.intentId;
         call.review.priority = call.aiSuggestion.priority || call.review.priority;
@@ -2174,9 +2189,82 @@
       }
 
       call.review.decision = decision;
-      persist();
-      render();
-      setBanner('Decision set to "' + decision + '".', 'ok');
+    }
+
+    async function onAcceptClick() {
+      const call = getSelectedCall();
+      if (!call || !canReviewRouting(call)) return;
+
+      if (isAwaitingRoutingReview(call)) {
+        applyDecisionToCall(call, 'accepted');
+        persist();
+        render();
+        await resolveRoutingReview('accepted');
+        return;
+      }
+
+      applyDecision('accepted');
+    }
+
+    function onRejectClick() {
+      applyDecision('rejected');
+    }
+
+    function buildRoutingReviewRequest(call, decision) {
+      return {
+        call_id: call.callId || '',
+        source_filename: call.sourceFilename || '',
+        decision,
+        transcript: call.transcript || { segments: [] },
+        routing: {
+          intent_id: call.review.intentId || call.aiSuggestion.intentId || '',
+          intent_confidence: Number(call.aiSuggestion.confidence || 0),
+          priority: call.review.priority || call.aiSuggestion.priority || 'medium',
+          suggested_group: call.review.group || call.aiSuggestion.group || ''
+        },
+        spam_check: call.spamCheck || {}
+      };
+    }
+
+    function replaceCallFromServerPayload(call, payload, options) {
+      const opts = options || {};
+      const updated = toCallRecord({ name: call.sourceFilename || 'call' }, payload);
+      updated.id = call.id;
+      updated.createdAt = call.createdAt;
+      updated.sourceFilename = call.sourceFilename;
+      updated.lastFeedback = call.lastFeedback;
+
+      const preservedSla = ensureCallSla(call);
+      const preservedStartedAt = preservedSla && preservedSla.startedAt ? preservedSla.startedAt : updated.createdAt;
+      const preservedLimitMinutes = normalizeSlaMinutes(preservedSla && preservedSla.limitMinutes);
+      const updatedStopTime = String(opts.stopTime || '').trim();
+      const preserveReview = Boolean(opts.preserveReview);
+
+      if (preserveReview) {
+        updated.review = {
+          decision: opts.reviewDecision || call.review.decision || updated.review.decision,
+          intentId: opts.reviewIntentId || call.review.intentId || updated.review.intentId,
+          priority: opts.reviewPriority || call.review.priority || updated.review.priority,
+          group: opts.reviewGroup || call.review.group || updated.review.group,
+          errorType: opts.reviewErrorType || call.review.errorType || updated.review.errorType,
+          comment: typeof opts.reviewComment === 'string' ? opts.reviewComment : (call.review.comment || updated.review.comment),
+          completedAt: updatedStopTime
+        };
+      } else {
+        updated.review.completedAt = updatedStopTime;
+      }
+
+      updated.sla = {
+        limitMinutes: preservedLimitMinutes,
+        startedAt: preservedStartedAt,
+        stoppedAt: updatedStopTime
+      };
+
+      const index = state.calls.findIndex((item) => item.id === call.id);
+      if (index >= 0) {
+        state.calls.splice(index, 1, updated);
+      }
+      return updated;
     }
 
     async function saveDecision() {
@@ -2196,23 +2284,56 @@
         call.review.decision = 'accepted';
       }
 
+      const requiresRoutingReviewCompletion = isAwaitingRoutingReview(call);
       const finishedAt = call.review.completedAt || new Date().toISOString();
-      call.review.completedAt = finishedAt;
-      ensureCallSla(call);
-      if (!call.sla.stoppedAt) {
-        call.sla.stoppedAt = finishedAt;
+
+      if (!requiresRoutingReviewCompletion) {
+        call.review.completedAt = finishedAt;
+        ensureCallSla(call);
+        if (!call.sla.stoppedAt) {
+          call.sla.stoppedAt = finishedAt;
+        }
+        persist();
+        render();
       }
 
-      persist();
-      render();
+      if (requiresRoutingReviewCompletion) {
+        state.routingReviewBusy = true;
+        renderActions();
+      }
+
+      let createdTicket = false;
       try {
-        const feedbackPayload = makeFeedbackPayload(call);
+        let activeCall = call;
+
+        if (requiresRoutingReviewCompletion) {
+          const payload = await apiJson('/api/v1/routing-review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildRoutingReviewRequest(call, call.review.decision || 'accepted'))
+          });
+          activeCall = replaceCallFromServerPayload(call, payload, {
+            stopTime: finishedAt,
+            preserveReview: true,
+            reviewDecision: call.review.decision,
+            reviewIntentId: call.review.intentId,
+            reviewPriority: call.review.priority,
+            reviewGroup: call.review.group,
+            reviewErrorType: call.review.errorType,
+            reviewComment: call.review.comment
+          });
+          persist();
+          render();
+          createdTicket = true;
+        }
+
+        const feedbackPayload = makeFeedbackPayload(activeCall);
         const feedbackResponse = await apiJson('/api/v1/routing-feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(feedbackPayload)
         });
-        call.lastFeedback = feedbackResponse;
+        activeCall.lastFeedback = feedbackResponse;
         persist();
         render();
 
@@ -2220,14 +2341,77 @@
         const autoLearnMessage = feedbackResponse && feedbackResponse.auto_learn_message
           ? ' ' + feedbackResponse.auto_learn_message
           : '';
-        if (autoLearnApplied) {
+
+        if (createdTicket && autoLearnApplied) {
+          setBanner('Decision saved. Ticket created. Auto-learning applied.' + autoLearnMessage, 'ok');
+        } else if (createdTicket) {
+          setBanner('Decision saved. Ticket created.' + autoLearnMessage, 'ok');
+        } else if (autoLearnApplied) {
           setBanner('Decision saved. Auto-learning applied.' + autoLearnMessage, 'ok');
         } else {
           setBanner('Decision saved.' + autoLearnMessage, 'ok');
         }
       } catch (err) {
         render();
-        setBanner('Saved locally, but feedback API failed: ' + String(err.message || err), 'error');
+        if (createdTicket) {
+          setBanner('Ticket was created, but saving routing feedback failed: ' + String(err.message || err), 'error');
+        } else if (requiresRoutingReviewCompletion) {
+          setBanner('Routing review could not create ticket: ' + String(err.message || err), 'error');
+        } else {
+          setBanner('Saved locally, but feedback API failed: ' + String(err.message || err), 'error');
+        }
+      } finally {
+        if (requiresRoutingReviewCompletion) {
+          state.routingReviewBusy = false;
+          renderActions();
+        }
+      }
+    }
+
+    async function resolveRoutingReview(decision) {
+      const call = getSelectedCall();
+      if (!call || !isAwaitingRoutingReview(call)) return;
+
+      state.routingReviewBusy = true;
+      renderActions();
+      setBanner(
+        decision === 'accepted'
+          ? 'Creating ticket after routing review...'
+          : 'Creating ticket after manual routing review...',
+        'ok'
+      );
+
+      try {
+        const payload = await apiJson('/api/v1/routing-review', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildRoutingReviewRequest(call, decision))
+        });
+
+        replaceCallFromServerPayload(call, payload, {
+          stopTime: new Date().toISOString(),
+          preserveReview: true,
+          reviewDecision: decision,
+          reviewIntentId: call.review.intentId,
+          reviewPriority: call.review.priority,
+          reviewGroup: call.review.group,
+          reviewErrorType: call.review.errorType,
+          reviewComment: call.review.comment
+        });
+
+        persist();
+        render();
+        setBanner(
+          decision === 'accepted'
+            ? 'Ticket created after routing review.'
+            : 'Ticket created after manual routing review.',
+          'ok'
+        );
+      } catch (err) {
+        setBanner(String(err.message || err), 'error');
+      } finally {
+        state.routingReviewBusy = false;
+        renderActions();
       }
     }
 
@@ -2281,12 +2465,13 @@
         }
         persist();
         render();
-        setBanner(
-          decision === 'spam'
-            ? 'Call marked as spam. Ticket creation skipped.'
-            : 'Spam gate overridden. Call continued through router.',
-          'ok'
-        );
+        let message = 'Spam gate overridden. Call continued through router.';
+        if (decision === 'spam') {
+          message = 'Call marked as spam. Ticket creation skipped.';
+        } else if (updated.status === 'awaiting_routing_review') {
+          message = 'Spam gate overridden. Call moved to routing review because confidence is low.';
+        }
+        setBanner(message, 'ok');
       } catch (err) {
         setBanner(String(err.message || err), 'error');
       } finally {
@@ -2475,7 +2660,7 @@
     }
 
     function renderActions() {
-      const disabled = state.processing || state.spamReviewBusy || !isAuthenticated();
+      const disabled = state.processing || state.spamReviewBusy || state.routingReviewBusy || !isAuthenticated();
       el.logoutBtn.disabled = state.processing;
       el.processBtn.disabled = disabled;
       el.clearBtn.classList.toggle('hidden', !isAdmin());

@@ -40,11 +40,17 @@ func (h *TicketGRPCHandler) CreateTicket(ctx context.Context, req *callprocessin
 		})
 	}
 
+	var metadata map[string]interface{}
+	if req.GetTranscript().GetMetadata() != nil {
+		metadata = req.GetTranscript().GetMetadata().AsMap()
+	}
+
 	createReq := &models.CreateTicketRequest{
 		Transcript: models.TranscriptData{
 			CallID:      req.GetTranscript().GetCallId(),
 			Segments:    segments,
 			RoleMapping: req.GetTranscript().GetRoleMapping(),
+			Metadata:    metadata,
 		},
 		Routing: models.RoutingData{
 			IntentID:         req.GetRouting().GetIntentId(),

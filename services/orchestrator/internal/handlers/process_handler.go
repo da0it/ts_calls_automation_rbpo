@@ -269,6 +269,28 @@ type spamReviewRequest struct {
 	} `json:"spam_check"`
 }
 
+type routingReviewRequest struct {
+	CallID         string                      `json:"call_id"`
+	SourceFilename string                      `json:"source_filename"`
+	Decision       string                      `json:"decision"`
+	Transcript     spamReviewTranscriptPayload `json:"transcript"`
+	Routing        struct {
+		IntentID         string  `json:"intent_id"`
+		IntentConfidence float64 `json:"intent_confidence"`
+		Priority         string  `json:"priority"`
+		SuggestedGroup   string  `json:"suggested_group"`
+	} `json:"routing"`
+	SpamCheck struct {
+		Status         string  `json:"status"`
+		PredictedLabel string  `json:"predicted_label"`
+		Confidence     float64 `json:"confidence"`
+		ThresholdLow   float64 `json:"threshold_low"`
+		ThresholdHigh  float64 `json:"threshold_high"`
+		Reason         string  `json:"reason"`
+		Backend        string  `json:"backend"`
+	} `json:"spam_check"`
+}
+
 func (h *ProcessHandler) ResolveSpamReview(c *gin.Context) {
 	if h.spamFeedbackService == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "spam feedback service is not configured"})
@@ -349,6 +371,77 @@ func (h *ProcessHandler) ResolveSpamReview(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (h *ProcessHandler) ResolveRoutingReview(c *gin.Context) {
+	var payload routingReviewRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	transcript := &clients.TranscriptionResponse{
+		CallID:      strings.TrimSpace(payload.Transcript.CallID),
+		Segments:    payload.Transcript.Segments,
+		RoleMapping: payload.Transcript.RoleMapping,
+		Metadata:    payload.Transcript.Metadata,
+	}
+	if transcript.CallID == "" {
+		transcript.CallID = strings.TrimSpace(payload.CallID)
+	}
+	if transcript.Metadata == nil {
+		transcript.Metadata = map[string]interface{}{}
+	}
+
+	routing := &clients.RoutingResponse{
+		IntentID:         strings.TrimSpace(payload.Routing.IntentID),
+		IntentConfidence: payload.Routing.IntentConfidence,
+		Priority:         strings.TrimSpace(payload.Routing.Priority),
+		SuggestedGroup:   strings.TrimSpace(payload.Routing.SuggestedGroup),
+	}
+	if payload.SpamCheck.Status != "" ||
+		payload.SpamCheck.PredictedLabel != "" ||
+		payload.SpamCheck.Confidence != 0 ||
+		payload.SpamCheck.ThresholdLow != 0 ||
+		payload.SpamCheck.ThresholdHigh != 0 ||
+		payload.SpamCheck.Reason != "" ||
+		payload.SpamCheck.Backend != "" {
+		routing.SpamCheck = &clients.SpamCheckResponse{
+			Status:         payload.SpamCheck.Status,
+			PredictedLabel: payload.SpamCheck.PredictedLabel,
+			Confidence:     payload.SpamCheck.Confidence,
+			ThresholdLow:   payload.SpamCheck.ThresholdLow,
+			ThresholdHigh:  payload.SpamCheck.ThresholdHigh,
+			Reason:         payload.SpamCheck.Reason,
+			Backend:        payload.SpamCheck.Backend,
+		}
+	}
+
+	result, err := h.orchestrator.ContinueAfterRoutingReview(services.ContinueAfterRoutingReviewInput{
+		CallID:         payload.CallID,
+		SourceFilename: payload.SourceFilename,
+		Decision:       payload.Decision,
+		Transcript:     transcript,
+		Routing:        routing,
+	})
+	if err != nil {
+		h.writeAudit(c, "call.routing_review", "call", transcript.CallID, "failed", map[string]interface{}{
+			"decision": payload.Decision,
+			"reason":   err.Error(),
+		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.writeAudit(c, "call.routing_review", "call", transcript.CallID, "success", map[string]interface{}{
+		"decision": payload.Decision,
+		"status":   result.Status,
+		"intent_id": routing.IntentID,
+		"priority": routing.Priority,
+		"suggested_group": routing.SuggestedGroup,
+	})
+
+	c.JSON(http.StatusOK, result)
+}
+
 func segmentsToPlainText(segments []clients.Segment, maxChars int) string {
 	if len(segments) == 0 {
 		return ""
@@ -399,6 +492,7 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 			"routing_intents":  "DELETE /api/v1/routing-config/intents/:id",
 			"routing_feedback": "POST /api/v1/routing-feedback",
 			"spam_review":      "POST /api/v1/spam-review",
+			"routing_review":   "POST /api/v1/routing-review",
 			"routing_model":    "GET /api/v1/routing-model/status, POST /api/v1/routing-model/reload, POST /api/v1/routing-model/train, POST /api/v1/routing-model/train-csv",
 			"audit_events":     "GET /api/v1/audit/events (admin)",
 			"health":           "GET /health",
@@ -407,7 +501,7 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 		"pipeline": []string{
 			"1. Transcription + Diarization",
 			"2. Spam Gate (allow / block / manual review)",
-			"3. Routing (RuBERT Intent Classification)",
+			"3. Routing (RuBERT Intent Classification + low-confidence review)",
 			"4. Ticket Creation",
 		},
 	})

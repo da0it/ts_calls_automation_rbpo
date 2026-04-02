@@ -225,6 +225,7 @@ services:
       TICKET_RPC_TIMEOUT_SECONDS: ${TICKET_RPC_TIMEOUT_SECONDS:-300}
       NOTIFICATION_GRPC_ADDR: notification_sender:50055
       ENTITY_SERVICE_URL: http://entity_extraction:5001
+      ROUTING_REVIEW_CONFIDENCE_THRESHOLD: "0.50"
       ROUTING_INTENTS_PATH: /shared-config/routing_intents.json
       ROUTING_GROUPS_PATH: /shared-config/routing_groups.json
       ROUTING_FEEDBACK_PATH: /shared-config/routing_feedback.jsonl

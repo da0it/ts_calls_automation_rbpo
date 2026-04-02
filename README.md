@@ -37,6 +37,12 @@
   (`LLM_PROVIDER=ollama`, рекомендованная модель `qwen2.5:7b`).
 - Для полностью локального режима ticket service ходит только в `OLLAMA_BASE_URL`
   и не отправляет транскрипты во внешние API.
+- Для enterprise-подключения новой тикет-системы без правок кода используйте
+  `TICKET_SYSTEM=webhook` и настройте один файл `configs/ticket.env`:
+  `TICKET_WEBHOOK_URL`, `TICKET_WEBHOOK_HEADERS_JSON`,
+  `TICKET_WEBHOOK_EXTERNAL_ID_PATH`, `TICKET_WEBHOOK_URL_PATH`.
+- Для интеграции с Scripted REST API SimpleOne включите `TICKET_SYSTEM=simpleone`
+  и задайте `SIMPLEONE_ENDPOINT_URL` и при необходимости `SIMPLEONE_BEARER_TOKEN`.
 - В orchestrator/transcription убраны лишние детали из логов (имена файлов/пути временных файлов).
 
 ## Go проверка

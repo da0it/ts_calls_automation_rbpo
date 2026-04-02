@@ -2,40 +2,40 @@
 package adapters
 
 import (
-    "fmt"
-    "time"
-    
-    "github.com/google/uuid"
-    "ticket_module/internal/models"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"ticket_module/internal/models"
 )
 
 type MockAdapter struct{}
 
 func NewMockAdapter() *MockAdapter {
-    return &MockAdapter{}
+	return &MockAdapter{}
 }
 
-func (a *MockAdapter) CreateTicket(draft *models.TicketDraft) (*models.TicketCreated, error) {
-    ticketID := uuid.New().String()
-    externalID := fmt.Sprintf("MOCK-%d", time.Now().Unix())
-    
-    return &models.TicketCreated{
-        TicketID:   ticketID,
-        ExternalID: externalID,
-        URL:        fmt.Sprintf("http://mock-system/tickets/%s", externalID),
-        System:     "mock",
-        CreatedAt:  time.Now(),
-    }, nil
+func (a *MockAdapter) CreateTicket(payload *models.TicketSystemPayload) (*models.TicketCreated, error) {
+	ticketID := uuid.New().String()
+	externalID := fmt.Sprintf("MOCK-%d", time.Now().Unix())
+
+	return &models.TicketCreated{
+		TicketID:   ticketID,
+		ExternalID: externalID,
+		URL:        fmt.Sprintf("http://mock-system/tickets/%s", externalID),
+		System:     "mock",
+		CreatedAt:  time.Now(),
+	}, nil
 }
 
 func (a *MockAdapter) GetTicket(externalID string) (*models.TicketCreated, error) {
-    return &models.TicketCreated{
-        ExternalID: externalID,
-        URL:        fmt.Sprintf("http://mock-system/tickets/%s", externalID),
-        System:     "mock",
-    }, nil
+	return &models.TicketCreated{
+		ExternalID: externalID,
+		URL:        fmt.Sprintf("http://mock-system/tickets/%s", externalID),
+		System:     "mock",
+	}, nil
 }
 
 func (a *MockAdapter) UpdateTicket(externalID string, update map[string]interface{}) error {
-    return nil
+	return nil
 }

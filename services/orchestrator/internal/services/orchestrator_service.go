@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	ProcessStatusCompleted          = "completed"
-	ProcessStatusAwaitingSpamReview = "awaiting_spam_review"
-	ProcessStatusSpamBlocked        = "spam_blocked"
+	ProcessStatusCompleted             = "completed"
+	ProcessStatusAwaitingRoutingReview = "awaiting_routing_review"
+	ProcessStatusAwaitingSpamReview    = "awaiting_spam_review"
+	ProcessStatusSpamBlocked           = "spam_blocked"
 )
 
 type OrchestratorService struct {
@@ -22,6 +23,7 @@ type OrchestratorService struct {
 	ticketClient        *clients.TicketClient
 	notificationClient  *clients.NotificationClient
 	entityClient        *clients.EntityClient
+	routingReviewConfidenceThreshold float64
 }
 
 func NewOrchestratorService(
@@ -30,13 +32,21 @@ func NewOrchestratorService(
 	ticketClient *clients.TicketClient,
 	notificationClient *clients.NotificationClient,
 	entityClient *clients.EntityClient,
+	routingReviewConfidenceThreshold float64,
 ) *OrchestratorService {
+	if routingReviewConfidenceThreshold < 0.0 {
+		routingReviewConfidenceThreshold = 0.0
+	}
+	if routingReviewConfidenceThreshold > 1.0 {
+		routingReviewConfidenceThreshold = 1.0
+	}
 	return &OrchestratorService{
 		transcriptionClient: transcriptionClient,
 		routingClient:       routingClient,
 		ticketClient:        ticketClient,
 		notificationClient:  notificationClient,
 		entityClient:        entityClient,
+		routingReviewConfidenceThreshold: routingReviewConfidenceThreshold,
 	}
 }
 
@@ -58,6 +68,14 @@ type ContinueAfterSpamReviewInput struct {
 	SourceFilename string
 	Decision       string
 	Transcript     *clients.TranscriptionResponse
+}
+
+type ContinueAfterRoutingReviewInput struct {
+	CallID         string
+	SourceFilename string
+	Decision       string
+	Transcript     *clients.TranscriptionResponse
+	Routing        *clients.RoutingResponse
 }
 
 func emptyEntities() *clients.Entities {
@@ -106,6 +124,14 @@ func isSpamReviewRequired(spamCheck *clients.SpamCheckResponse) bool {
 
 func isSpamBlocked(spamCheck *clients.SpamCheckResponse) bool {
 	return spamCheck != nil && spamCheck.Status == "block"
+}
+
+func isRoutingReviewRequired(routing *clients.RoutingResponse, threshold float64) bool {
+	if routing == nil || threshold <= 0.0 {
+		return false
+	}
+	confidence := routing.IntentConfidence
+	return confidence >= 0.0 && confidence < threshold
 }
 
 func cloneSpamCheck(spamCheck *clients.SpamCheckResponse) *clients.SpamCheckResponse {
@@ -259,6 +285,25 @@ func (s *OrchestratorService) ProcessCall(audioPath string) (*ProcessCallResult,
 			TotalTime:      totalTime,
 		}, nil
 	}
+	if isRoutingReviewRequired(routing, s.routingReviewConfidenceThreshold) {
+		totalTime := time.Since(startTime).Seconds()
+		log.Printf(
+			"Call processing paused for manual routing review in %.2fs (confidence=%.3f threshold=%.3f)",
+			totalTime,
+			routing.IntentConfidence,
+			s.routingReviewConfidenceThreshold,
+		)
+		return &ProcessCallResult{
+			CallID:         transcript.CallID,
+			Status:         ProcessStatusAwaitingRoutingReview,
+			Transcript:     transcript,
+			Routing:        routing,
+			SpamCheck:      cloneSpamCheck(routing.SpamCheck),
+			Entities:       emptyEntities(),
+			ProcessingTime: processingTime,
+			TotalTime:      totalTime,
+		}, nil
+	}
 	return s.completeNonSpamCall(transcript, routing, ProcessStatusCompleted, startTime, processingTime)
 }
 
@@ -312,10 +357,62 @@ func (s *OrchestratorService) ContinueAfterSpamReview(input ContinueAfterSpamRev
 		log.Printf("✓ Routing after spam review completed in %.2fs (intent: %s, priority: %s)",
 			processingTime["routing"], routing.IntentID, routing.Priority)
 
+		if isRoutingReviewRequired(routing, s.routingReviewConfidenceThreshold) {
+			totalTime := time.Since(startTime).Seconds()
+			log.Printf(
+				"Call processing paused for manual routing review after spam review in %.2fs (confidence=%.3f threshold=%.3f)",
+				totalTime,
+				routing.IntentConfidence,
+				s.routingReviewConfidenceThreshold,
+			)
+			return &ProcessCallResult{
+				CallID:         input.Transcript.CallID,
+				Status:         ProcessStatusAwaitingRoutingReview,
+				Transcript:     input.Transcript,
+				Routing:        routing,
+				SpamCheck:      cloneSpamCheck(routing.SpamCheck),
+				Entities:       emptyEntities(),
+				ProcessingTime: processingTime,
+				TotalTime:      totalTime,
+			}, nil
+		}
+
 		return s.completeNonSpamCall(input.Transcript, routing, ProcessStatusCompleted, startTime, processingTime)
 	default:
 		return nil, fmt.Errorf("decision must be spam or not_spam")
 	}
+}
+
+func (s *OrchestratorService) ContinueAfterRoutingReview(input ContinueAfterRoutingReviewInput) (*ProcessCallResult, error) {
+	startTime := time.Now()
+	processingTime := make(map[string]float64)
+	decision := strings.ToLower(strings.TrimSpace(input.Decision))
+
+	if input.Transcript == nil {
+		return nil, fmt.Errorf("transcript is required")
+	}
+	if input.Routing == nil {
+		return nil, fmt.Errorf("routing is required")
+	}
+	if decision != "accepted" && decision != "rejected" {
+		return nil, fmt.Errorf("decision must be accepted or rejected")
+	}
+	if input.Transcript.CallID == "" {
+		input.Transcript.CallID = input.CallID
+	}
+	if input.Transcript.CallID == "" {
+		input.Transcript.CallID = "unknown-call"
+	}
+
+	log.Printf(
+		"Completing call after manual routing review: call_id=%s decision=%s intent=%s confidence=%.3f",
+		input.Transcript.CallID,
+		decision,
+		input.Routing.IntentID,
+		input.Routing.IntentConfidence,
+	)
+
+	return s.completeNonSpamCall(input.Transcript, input.Routing, ProcessStatusCompleted, startTime, processingTime)
 }
 
 // HealthCheck проверяет доступность всех сервисов
