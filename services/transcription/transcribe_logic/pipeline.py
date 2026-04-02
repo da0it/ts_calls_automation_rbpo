@@ -78,7 +78,7 @@ def transcribe_with_roles(
             language=os.getenv("WHISPERX_LANGUAGE", "ru"),
             device=get_whisperx_device_from_env(),
             compute_type=os.getenv("WHISPERX_COMPUTE_TYPE", "int8"),
-            batch_size=int(os.getenv("WHISPERX_BATCH_SIZE", "4")),
+            batch_size=int(os.getenv("WHISPERX_BATCH_SIZE", "1")),
             vad_method=os.getenv("WHISPERX_VAD_METHOD", "silero").strip().lower(),
         )
 

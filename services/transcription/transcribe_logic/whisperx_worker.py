@@ -85,7 +85,7 @@ def main() -> None:
     parser.add_argument("--language", default="ru")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--compute-type", default="int8")
-    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--vad-method", default="silero", choices=["silero", "pyannote"])
     args = parser.parse_args()
     device = resolve_whisperx_device(args.device)

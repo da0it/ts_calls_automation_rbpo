@@ -99,7 +99,7 @@ def whisperx_transcribe_inprocess(
     language: str = "ru",
     device: str = "auto",
     compute_type: str = "int8",
-    batch_size: int = 4,
+    batch_size: int = 1,
     vad_method: str = "silero",
 ) -> List[Dict[str, Any]]:
     device = resolve_whisperx_device(device)
