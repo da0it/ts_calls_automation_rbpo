@@ -224,9 +224,21 @@
     }
 
     .call-delete-btn {
-      padding: 2px 8px;
-      min-height: 24px;
+      padding: 2px 6px;
+      min-height: 20px;
+      border-radius: 999px;
       line-height: 1;
+      font-size: 11px;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+
+    .call-delete-btn:hover:not(:disabled) {
+      color: var(--bad);
+      background: #fff4f4;
+      border-color: #f3c4c4;
     }
 
     .chips {
@@ -1071,7 +1083,7 @@
     function getSegmentSpeakerLabel(segment, index) {
       const rawSpeaker = String(segment && segment.speaker || '').trim();
       if (!rawSpeaker || /^unknown$/i.test(rawSpeaker)) {
-        return '';
+        return `Speaker ${(index % 2) + 1}`;
       }
 
       const speakerMatch = rawSpeaker.match(/^speaker\s*([1-9]\d*)$/i);
@@ -1412,7 +1424,7 @@
           : '';
         const slaChip = renderSlaChip(call);
         const deleteButton = isAdmin()
-          ? '<button class="btn btn-bad btn-mini call-delete-btn js-del-call" data-id="' + escapeAttr(call.id) + '" type="button">Delete</button>'
+          ? '<button class="btn btn-ghost btn-mini call-delete-btn js-del-call" data-id="' + escapeAttr(call.id) + '" type="button">Del</button>'
           : '';
 
         return (
@@ -1514,12 +1526,12 @@
           </section>
         `;
 
-        const rawBlock = `
+        const rawBlock = isAdmin() ? `
           <section class="card">
             <h3>Raw API JSON</h3>
             <pre class="raw">${escapeHtml(JSON.stringify(makeReviewedPayload(call), null, 2))}</pre>
           </section>
-        `;
+        ` : '';
 
         el.workspace.innerHTML = metaBlock + spamMetaBlock + transcriptBlock + rawBlock;
         bindSpamReviewActions();
@@ -1607,12 +1619,12 @@
         </section>
       `;
 
-      const rawBlock = `
+      const rawBlock = isAdmin() ? `
         <section class="card">
           <h3>Raw API JSON</h3>
           <pre class="raw">${escapeHtml(JSON.stringify(makeReviewedPayload(call), null, 2))}</pre>
         </section>
-      `;
+      ` : '';
 
       el.workspace.innerHTML = metaBlock + spamMetaBlock + routingBlock + transcriptBlock + rawBlock;
 
