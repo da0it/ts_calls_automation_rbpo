@@ -41,27 +41,16 @@ def _normalize_speaker_label(raw_speaker: Any) -> Optional[str]:
     if match:
         numeric = int(match.group(1))
         if "_" in speaker or speaker.upper().startswith("SPEAKER_"):
-            return f"Speaker {(numeric % 2) + 1}"
-        return f"Speaker {1 if numeric <= 1 else 2 if numeric == 2 else ((numeric - 1) % 2) + 1}"
+            return f"Speaker {numeric + 1}"
+        return f"Speaker {numeric}"
 
     return speaker
 
 
 def _attach_basic_diarization(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    speaker_aliases: Dict[str, str] = {}
-    next_speaker_index = 0
-
     for segment in segments:
         normalized_speaker = _normalize_speaker_label(segment.get("speaker"))
-        if normalized_speaker in {"Speaker 1", "Speaker 2"}:
-            segment["speaker"] = normalized_speaker
-        elif normalized_speaker:
-            if normalized_speaker not in speaker_aliases:
-                speaker_aliases[normalized_speaker] = f"Speaker {(next_speaker_index % 2) + 1}"
-                next_speaker_index += 1
-            segment["speaker"] = speaker_aliases[normalized_speaker]
-        else:
-            segment["speaker"] = ""
+        segment["speaker"] = normalized_speaker or ""
         segment["role"] = ""
     return segments
 
@@ -119,7 +108,11 @@ def transcribe_with_roles(
 
         segments = _attach_basic_diarization(segments)
         segments = _round_segments(segments, ndigits=2)
-        note += " Real speaker labels are normalized to Speaker 1 / Speaker 2 when diarization data is available."
+        has_speaker_labels = any(str(segment.get("speaker") or "").strip() for segment in segments)
+        if has_speaker_labels:
+            note += " Speaker labels are shown only when diarization data is available."
+        else:
+            note += " No speaker labels were produced by the backend."
 
         return {
             "mode": mode,

@@ -1083,19 +1083,19 @@
     function getSegmentSpeakerLabel(segment, index) {
       const rawSpeaker = String(segment && segment.speaker || '').trim();
       if (!rawSpeaker || /^unknown$/i.test(rawSpeaker)) {
-        return `Speaker ${(index % 2) + 1}`;
+        return '';
       }
 
       const speakerMatch = rawSpeaker.match(/^speaker\s*([1-9]\d*)$/i);
       if (speakerMatch) {
         const speakerNumber = Number(speakerMatch[1]);
-        return `Speaker ${speakerNumber <= 2 ? speakerNumber : ((speakerNumber - 1) % 2) + 1}`;
+        return `Speaker ${speakerNumber}`;
       }
 
       const diarizationMatch = rawSpeaker.match(/^speaker[_\s-]*0*(\d+)$/i);
       if (diarizationMatch) {
         const zeroBased = Number(diarizationMatch[1]);
-        return `Speaker ${(zeroBased % 2) + 1}`;
+        return `Speaker ${zeroBased + 1}`;
       }
 
       return rawSpeaker;
