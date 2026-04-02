@@ -1134,7 +1134,6 @@
           </div>
           <div class="toolbar">
             <button id="save-sla-btn" class="btn btn-primary btn-mini" type="button" ${state.slaSaveBusy ? 'disabled' : ''}>Save SLA</button>
-            <button id="reload-sla-btn" class="btn btn-ghost btn-mini" type="button" ${state.slaSaveBusy ? 'disabled' : ''}>Reload</button>
           </div>
         </section>
       `;
@@ -1466,6 +1465,13 @@
       const spamCheck = call.spamCheck || null;
       const groupOptions = getGroupOptions();
       const intentOptions = getIntentOptions();
+      const spamThresholdsMeta = isAdmin() ? `
+            <div class="kv"><div class="k">Thresholds</div><div class="v">${escapeHtml(Number(spamCheck && spamCheck.threshold_low || 0).toFixed(2))} / ${escapeHtml(Number(spamCheck && spamCheck.threshold_high || 0).toFixed(2))}</div></div>
+            <div class="kv"><div class="k">Backend</div><div class="v">${escapeHtml(spamCheck && spamCheck.backend || '-')}</div></div>
+      ` : '';
+      const saveDecisionHelp = isAdmin()
+        ? ' Save Decision = persist decision and send feedback for model improvement.'
+        : '';
 
       const metaBlock = `
         <section class="card">
@@ -1473,7 +1479,6 @@
           <div class="meta">
             <div class="kv"><div class="k">Source file</div><div class="v">${escapeHtml(call.sourceFilename || '-')}</div></div>
             <div class="kv"><div class="k">Call ID</div><div class="v">${escapeHtml(call.callId || '-')}</div></div>
-            <div class="kv"><div class="k">Segments</div><div class="v">${segments.length}</div></div>
             <div class="kv"><div class="k">Status</div><div class="v">${escapeHtml(call.status || 'completed')}</div></div>
             <div class="kv"><div class="k">SLA</div><div class="v js-sla-summary" data-call-id="${escapeAttr(call.id)}">-</div></div>
           </div>
@@ -1486,8 +1491,7 @@
           <div class="meta">
             <div class="kv"><div class="k">Status</div><div class="v">${escapeHtml(spamCheck.status || '-')}</div></div>
             <div class="kv"><div class="k">Confidence</div><div class="v">${formatConfidence(spamCheck.confidence)}</div></div>
-            <div class="kv"><div class="k">Thresholds</div><div class="v">${escapeHtml(Number(spamCheck.threshold_low || 0).toFixed(2))} / ${escapeHtml(Number(spamCheck.threshold_high || 0).toFixed(2))}</div></div>
-            <div class="kv"><div class="k">Backend</div><div class="v">${escapeHtml(spamCheck.backend || '-')}</div></div>
+            ${spamThresholdsMeta}
           </div>
           <div class="help-note">
             <strong>Reason:</strong> ${escapeHtml(spamCheck.reason || '-')}<br />
@@ -1591,7 +1595,7 @@
             <strong>Buttons:</strong>
             Accept AI = copy AI suggestion into final fields.
             Reject AI = mark decision as rejected and keep your manual corrections.
-            Save Decision = persist decision and send feedback for model improvement.
+            ${saveDecisionHelp}
           </div>
         </section>
       `;
@@ -1886,15 +1890,6 @@
         });
       }
 
-      const reloadSlaBtn = document.getElementById('reload-sla-btn');
-      if (reloadSlaBtn) {
-        reloadSlaBtn.addEventListener('click', async () => {
-          await loadAppSettings(false);
-          render();
-          setBanner('SLA settings refreshed from server.', 'ok');
-        });
-      }
-
       const toggleGroupFormBtn = document.getElementById('toggle-add-group-form-btn');
       if (toggleGroupFormBtn) {
         toggleGroupFormBtn.addEventListener('click', () => {
@@ -2175,6 +2170,10 @@
     async function saveDecision() {
       const call = getSelectedCall();
       if (!call || !canReviewRouting(call)) return;
+      if (!isAdmin()) {
+        setBanner('Only admins can save routing decisions.', 'error');
+        return;
+      }
 
       if (!call.review.intentId || !call.review.group) {
         setBanner('Final intent id and final group are required.', 'error');
@@ -2469,13 +2468,14 @@
       el.processBtn.disabled = disabled;
       el.clearBtn.classList.toggle('hidden', !isAdmin());
       el.clearBtn.disabled = disabled || !isAdmin() || state.calls.length === 0;
+      el.saveBtn.classList.toggle('hidden', !isAdmin());
 
       const call = state.activeTab === 'review' ? getSelectedCall() : null;
       const hasCall = Boolean(call);
       const canReview = Boolean(call) && canReviewRouting(call);
       el.acceptBtn.disabled = !canReview || disabled;
       el.rejectBtn.disabled = !canReview || disabled;
-      el.saveBtn.disabled = !canReview || disabled;
+      el.saveBtn.disabled = !canReview || disabled || !isAdmin();
       el.exportBtn.disabled = !hasCall || disabled;
       el.copyBtn.disabled = !hasCall || disabled;
     }
