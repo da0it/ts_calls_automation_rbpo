@@ -57,6 +57,10 @@ func main() {
 	if err := appSettingsService.Migrate(); err != nil {
 		log.Fatalf("Failed to run app settings migration: %v", err)
 	}
+	callQueueService := services.NewCallQueueService(db)
+	if err := callQueueService.Migrate(); err != nil {
+		log.Fatalf("Failed to run call queue migration: %v", err)
+	}
 	if err := userService.SeedAdmin(cfg.AdminUsername, cfg.AdminPassword); err != nil {
 		log.Fatalf("Failed to seed admin: %v", err)
 	}
@@ -123,6 +127,7 @@ func main() {
 	// Инициализация handlers
 	processHandler := handlers.NewProcessHandler(
 		orchestrator,
+		callQueueService,
 		appSettingsService,
 		routingConfigService,
 		routingFeedbackService,
@@ -251,6 +256,7 @@ func setupRouter(
 	{
 		api.GET("/auth/me", auth.Me)
 		api.POST("/process-call", h.ProcessCall)
+		api.GET("/calls", h.ListCalls)
 		api.POST("/spam-review", h.ResolveSpamReview)
 		api.POST("/routing-review", h.ResolveRoutingReview)
 		api.GET("/app-settings", h.GetAppSettings)
@@ -262,6 +268,8 @@ func setupRouter(
 		admin := api.Group("")
 		admin.Use(adminMw)
 		{
+			admin.DELETE("/calls", h.ClearCalls)
+			admin.DELETE("/calls/:id", h.DeleteCall)
 			admin.PUT("/app-settings", h.UpdateAppSettings)
 			admin.GET("/audit/events", h.ListAuditEvents)
 

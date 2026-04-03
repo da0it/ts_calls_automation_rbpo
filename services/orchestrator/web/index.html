@@ -717,6 +717,7 @@
           await loadAppSettings(true);
           await loadRoutingCatalog(true);
           await loadRoutingModelStatus(true);
+          await loadCalls(true);
           if (isAdmin()) {
             await loadUsers(true);
           }
@@ -771,10 +772,8 @@
       if (!raw) return;
       try {
         const parsed = JSON.parse(raw);
-        state.calls = Array.isArray(parsed.calls) ? parsed.calls.map(normalizeStoredCall) : [];
-        state.selectedCallId = parsed.selectedCallId || (state.calls[0] && state.calls[0].id) || null;
+        state.selectedCallId = parsed && parsed.selectedCallId ? parsed.selectedCallId : null;
       } catch (_err) {
-        state.calls = [];
         state.selectedCallId = null;
       }
     }
@@ -794,7 +793,6 @@
 
     function persist() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        calls: state.calls,
         selectedCallId: state.selectedCallId
       }));
     }
@@ -814,6 +812,9 @@
       state.auth.token = '';
       state.auth.user = null;
       state.users = [];
+      state.calls = [];
+      state.selectedCallId = null;
+      persist();
       persistAuth();
     }
 
@@ -873,6 +874,7 @@
         await loadAppSettings(true);
         await loadRoutingCatalog(true);
         await loadRoutingModelStatus(true);
+        await loadCalls(true);
         if (isAdmin()) {
           await loadUsers(true);
         } else {
@@ -1245,6 +1247,43 @@
       }
     }
 
+    async function loadCalls(silent) {
+      if (!isAuthenticated()) {
+        state.calls = [];
+        state.selectedCallId = null;
+        persist();
+        return;
+      }
+
+      try {
+        const payload = await apiJson('/api/v1/calls');
+        const calls = payload && Array.isArray(payload.calls) ? payload.calls.map(normalizeStoredCall) : [];
+        state.calls = calls;
+        if (!state.selectedCallId || !state.calls.some((call) => call.id === state.selectedCallId)) {
+          state.selectedCallId = state.calls[0] ? state.calls[0].id : null;
+        }
+        persist();
+      } catch (err) {
+        state.calls = [];
+        state.selectedCallId = null;
+        if (!silent) {
+          setBanner('Failed to load shared call queue.', 'error');
+        }
+      }
+    }
+
+    async function reloadCallsAndSelect(preferredId) {
+      await loadCalls(true);
+      const normalizedId = String(preferredId || '').trim();
+      if (normalizedId && state.calls.some((call) => call.id === normalizedId)) {
+        state.selectedCallId = normalizedId;
+      } else {
+        state.selectedCallId = state.calls[0] ? state.calls[0].id : null;
+      }
+      persist();
+      render();
+    }
+
     async function onProcessSubmit(event) {
       event.preventDefault();
       const file = el.file.files[0];
@@ -1262,12 +1301,7 @@
 
       try {
         const payload = await apiJson('/api/v1/process-call', { method: 'POST', body });
-
-        const call = toCallRecord(file, payload);
-        state.calls.unshift(call);
-        state.selectedCallId = call.id;
-        persist();
-        render();
+        await reloadCallsAndSelect(payload && payload.queue_id);
         setBanner('Call processed and added to review queue.', 'ok');
         el.file.value = '';
       } catch (err) {
@@ -1276,58 +1310,6 @@
         state.processing = false;
         renderActions();
       }
-    }
-
-    function toCallRecord(file, payload) {
-      const routing = payload && payload.routing ? payload.routing : {};
-      const spamCheck = normalizeSpamCheck((routing && routing.spam_check) || (payload && payload.spam_check));
-      const ticket = normalizeTicket(payload && payload.ticket);
-      const status = String(payload && payload.status || 'completed').trim() || 'completed';
-      const callId = (payload && payload.call_id) || '';
-      const now = new Date().toISOString();
-      const requestReceivedAt = String(payload && payload.request_received_at || '').trim() || now;
-      const processedAt = String(payload && payload.processed_at || '').trim() || now;
-      const suggestedIntentId = routing.intent_id || 'misc.triage';
-      const intentMeta = getIntentMeta(suggestedIntentId);
-      const defaultGroup = intentMeta ? intentMeta.default_group : (state.catalog.groups[0] ? state.catalog.groups[0].id : '');
-      const defaultPriority = intentMeta ? intentMeta.priority : 'medium';
-      const slaMinutes = normalizeSlaMinutes(state.appSettings && state.appSettings.slaMinutes);
-      const autoStoppedAt = status === 'spam_blocked'
-        ? processedAt
-        : normalizeTimestamp((ticket && ticket.createdAt) || (hasCreatedTicket(ticket) ? processedAt : ''));
-
-      return {
-        id: crypto.randomUUID ? crypto.randomUUID() : 'call-' + Date.now(),
-        sourceFilename: file.name,
-        createdAt: requestReceivedAt,
-        processedAt,
-        callId,
-        status,
-        transcript: payload && payload.transcript ? payload.transcript : { segments: [] },
-        ticket,
-        raw: payload,
-        spamCheck,
-        review: {
-          decision: 'pending',
-          intentId: suggestedIntentId,
-          priority: normalizePriority(routing.priority || defaultPriority),
-          group: routing.suggested_group || defaultGroup,
-          errorType: 'none',
-          comment: '',
-          completedAt: autoStoppedAt
-        },
-        aiSuggestion: {
-          intentId: suggestedIntentId,
-          confidence: routing.intent_confidence,
-          priority: normalizePriority(routing.priority || defaultPriority),
-          group: routing.suggested_group || defaultGroup
-        },
-        sla: {
-          limitMinutes: slaMinutes,
-          startedAt: requestReceivedAt,
-          stoppedAt: autoStoppedAt
-        }
-      };
     }
 
     function normalizeSpamCheck(raw) {
@@ -2067,6 +2049,7 @@
 
     function buildRoutingReviewRequest(call, decision) {
       return {
+        queue_id: call.id || '',
         call_id: call.callId || '',
         source_filename: call.sourceFilename || '',
         decision,
@@ -2079,47 +2062,6 @@
         },
         spam_check: call.spamCheck || {}
       };
-    }
-
-    function replaceCallFromServerPayload(call, payload, options) {
-      const opts = options || {};
-      const updated = toCallRecord({ name: call.sourceFilename || 'call' }, payload);
-      updated.id = call.id;
-      updated.createdAt = call.createdAt;
-      updated.sourceFilename = call.sourceFilename;
-      updated.lastFeedback = call.lastFeedback;
-
-      const preservedSla = ensureCallSla(call);
-      const preservedStartedAt = preservedSla && preservedSla.startedAt ? preservedSla.startedAt : updated.createdAt;
-      const preservedLimitMinutes = normalizeSlaMinutes(preservedSla && preservedSla.limitMinutes);
-      const updatedStopTime = getAutomaticSlaStopTime(updated) || normalizeTimestamp(opts.stopTime);
-      const preserveReview = Boolean(opts.preserveReview);
-
-      if (preserveReview) {
-        updated.review = {
-          decision: opts.reviewDecision || call.review.decision || updated.review.decision,
-          intentId: opts.reviewIntentId || call.review.intentId || updated.review.intentId,
-          priority: opts.reviewPriority || call.review.priority || updated.review.priority,
-          group: opts.reviewGroup || call.review.group || updated.review.group,
-          errorType: opts.reviewErrorType || call.review.errorType || updated.review.errorType,
-          comment: typeof opts.reviewComment === 'string' ? opts.reviewComment : (call.review.comment || updated.review.comment),
-          completedAt: updatedStopTime
-        };
-      } else {
-        updated.review.completedAt = updatedStopTime;
-      }
-
-      updated.sla = {
-        limitMinutes: preservedLimitMinutes,
-        startedAt: preservedStartedAt,
-        stoppedAt: updatedStopTime
-      };
-
-      const index = state.calls.findIndex((item) => item.id === call.id);
-      if (index >= 0) {
-        state.calls.splice(index, 1, updated);
-      }
-      return updated;
     }
 
     async function saveDecision() {
@@ -2140,17 +2082,6 @@
       }
 
       const requiresRoutingReviewCompletion = isAwaitingRoutingReview(call);
-      const finishedAt = call.review.completedAt || new Date().toISOString();
-
-      if (!requiresRoutingReviewCompletion) {
-        call.review.completedAt = finishedAt;
-        ensureCallSla(call);
-        if (!call.sla.stoppedAt) {
-          call.sla.stoppedAt = finishedAt;
-        }
-        persist();
-        render();
-      }
 
       if (requiresRoutingReviewCompletion) {
         state.routingReviewBusy = true;
@@ -2159,38 +2090,22 @@
 
       let createdTicket = false;
       try {
-        let activeCall = call;
-
         if (requiresRoutingReviewCompletion) {
-          const payload = await apiJson('/api/v1/routing-review', {
+          await apiJson('/api/v1/routing-review', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(buildRoutingReviewRequest(call, call.review.decision || 'accepted'))
           });
-          activeCall = replaceCallFromServerPayload(call, payload, {
-            stopTime: finishedAt,
-            preserveReview: true,
-            reviewDecision: call.review.decision,
-            reviewIntentId: call.review.intentId,
-            reviewPriority: call.review.priority,
-            reviewGroup: call.review.group,
-            reviewErrorType: call.review.errorType,
-            reviewComment: call.review.comment
-          });
-          persist();
-          render();
           createdTicket = true;
         }
 
-        const feedbackPayload = makeFeedbackPayload(activeCall);
+        const feedbackPayload = makeFeedbackPayload(call);
         const feedbackResponse = await apiJson('/api/v1/routing-feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(feedbackPayload)
         });
-        activeCall.lastFeedback = feedbackResponse;
-        persist();
-        render();
+        await reloadCallsAndSelect(call.id);
 
         const autoLearnApplied = Boolean(feedbackResponse && feedbackResponse.auto_learn_applied);
         const autoLearnMessage = feedbackResponse && feedbackResponse.auto_learn_message
@@ -2242,20 +2157,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(buildRoutingReviewRequest(call, decision))
         });
-
-        replaceCallFromServerPayload(call, payload, {
-          stopTime: new Date().toISOString(),
-          preserveReview: true,
-          reviewDecision: decision,
-          reviewIntentId: call.review.intentId,
-          reviewPriority: call.review.priority,
-          reviewGroup: call.review.group,
-          reviewErrorType: call.review.errorType,
-          reviewComment: call.review.comment
-        });
-
-        persist();
-        render();
+        await reloadCallsAndSelect(payload && payload.queue_id || call.id);
         setBanner(
           decision === 'accepted'
             ? 'Ticket created after routing review.'
@@ -2289,6 +2191,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            queue_id: call.id || '',
             call_id: call.callId || '',
             source_filename: call.sourceFilename || '',
             decision,
@@ -2296,35 +2199,15 @@
             spam_check: call.spamCheck || {}
           })
         });
-
-        const updated = toCallRecord({ name: call.sourceFilename || 'call' }, payload);
-        updated.id = call.id;
-        updated.createdAt = call.createdAt;
-        updated.sourceFilename = call.sourceFilename;
-        updated.lastFeedback = call.lastFeedback;
-        const preservedSla = ensureCallSla(call);
-        const preservedStartedAt = preservedSla && preservedSla.startedAt ? preservedSla.startedAt : updated.createdAt;
-        const preservedLimitMinutes = normalizeSlaMinutes(preservedSla && preservedSla.limitMinutes);
-        const shouldFreezeSla = updated.status === 'spam_blocked';
-        const updatedStopTime = shouldFreezeSla ? new Date().toISOString() : '';
-        updated.review.completedAt = updatedStopTime;
-        updated.sla = {
-          limitMinutes: preservedLimitMinutes,
-          startedAt: preservedStartedAt,
-          stoppedAt: updatedStopTime
-        };
-
-        const index = state.calls.findIndex((item) => item.id === call.id);
-        if (index >= 0) {
-          state.calls.splice(index, 1, updated);
-        }
-        persist();
-        render();
+        await reloadCallsAndSelect(payload && payload.queue_id || call.id);
         let message = 'Spam gate overridden. Call continued through router.';
         if (decision === 'spam') {
           message = 'Call marked as spam. Ticket creation skipped.';
-        } else if (updated.status === 'awaiting_routing_review') {
-          message = 'Spam gate overridden. Call moved to routing review because confidence is low.';
+        } else {
+          const updated = getSelectedCall();
+          if (updated && updated.status === 'awaiting_routing_review') {
+            message = 'Spam gate overridden. Call moved to routing review because confidence is low.';
+          }
         }
         setBanner(message, 'ok');
       } catch (err) {
@@ -2335,22 +2218,27 @@
       }
     }
 
-    function clearAllCalls() {
+    async function clearAllCalls() {
       if (!isAdmin()) {
-        setBanner('Only admins can remove calls from the local review queue.', 'error');
+        setBanner('Only admins can remove calls from the shared review queue.', 'error');
         return;
       }
-      if (!confirm('Clear all locally stored calls and review decisions?')) return;
-      state.calls = [];
-      state.selectedCallId = null;
-      persist();
-      render();
-      setBanner('All local call records were removed.', 'ok');
+      if (!confirm('Clear all calls from the shared review queue?')) return;
+      try {
+        await apiJson('/api/v1/calls', { method: 'DELETE' });
+        state.calls = [];
+        state.selectedCallId = null;
+        persist();
+        render();
+        setBanner('All shared call records were removed.', 'ok');
+      } catch (err) {
+        setBanner(String(err.message || err), 'error');
+      }
     }
 
-    function deleteCallById(callId) {
+    async function deleteCallById(callId) {
       if (!isAdmin()) {
-        setBanner('Only admins can remove calls from the local review queue.', 'error');
+        setBanner('Only admins can remove calls from the shared review queue.', 'error');
         return;
       }
 
@@ -2362,16 +2250,23 @@
 
       const call = state.calls[index];
       const label = call && call.sourceFilename ? call.sourceFilename : normalizedCallId;
-      if (!confirm('Delete call "' + label + '" from the local review queue?')) return;
+      if (!confirm('Delete call "' + label + '" from the shared review queue?')) return;
 
-      state.calls.splice(index, 1);
-      if (state.selectedCallId === normalizedCallId) {
-        const nextCall = state.calls[index] || state.calls[index - 1] || null;
-        state.selectedCallId = nextCall ? nextCall.id : null;
+      try {
+        await apiJson('/api/v1/calls/' + encodeURIComponent(normalizedCallId), {
+          method: 'DELETE'
+        });
+        state.calls.splice(index, 1);
+        if (state.selectedCallId === normalizedCallId) {
+          const nextCall = state.calls[index] || state.calls[index - 1] || null;
+          state.selectedCallId = nextCall ? nextCall.id : null;
+        }
+        persist();
+        render();
+        setBanner('Call removed from the shared review queue.', 'ok');
+      } catch (err) {
+        setBanner(String(err.message || err), 'error');
       }
-      persist();
-      render();
-      setBanner('Call removed from the local review queue.', 'ok');
     }
 
     async function copyCurrentCall() {
@@ -2420,6 +2315,7 @@
     function makeFeedbackPayload(call) {
       const segments = (call.transcript && Array.isArray(call.transcript.segments)) ? call.transcript.segments : [];
       return {
+        queue_id: call.id || '',
         call_id: call.callId || '',
         source_filename: call.sourceFilename || '',
         decision: call.review.decision || 'accepted',

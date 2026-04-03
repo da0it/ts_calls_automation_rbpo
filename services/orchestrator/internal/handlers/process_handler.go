@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -26,6 +27,7 @@ var allowedAudioFormats = map[string]struct{}{
 
 type ProcessHandler struct {
 	orchestrator           *services.OrchestratorService
+	callQueueService       *services.CallQueueService
 	appSettingsService     *services.AppSettingsService
 	routingConfigService   *services.RoutingConfigService
 	routingFeedbackService *services.RoutingFeedbackService
@@ -110,6 +112,226 @@ func buildSpamCheck(payload reviewSpamCheckPayload) *clients.SpamCheckResponse {
 	}
 }
 
+func normalizePriority(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	if value == "" || value == "normal" {
+		return "medium"
+	}
+	return value
+}
+
+func mapString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return strings.TrimSpace(fmt.Sprintf("%v", value))
+}
+
+func mapObject(value interface{}) map[string]interface{} {
+	if item, ok := value.(map[string]interface{}); ok && item != nil {
+		return item
+	}
+	return nil
+}
+
+func (h *ProcessHandler) currentSLAMinutes() int {
+	if h.appSettingsService == nil {
+		return 15
+	}
+	settings, err := h.appSettingsService.Get()
+	if err != nil || settings == nil || settings.SLAMinutes <= 0 {
+		return 15
+	}
+	return settings.SLAMinutes
+}
+
+func processResultMap(result *services.ProcessCallResult) (map[string]interface{}, error) {
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+	delete(payload, "queue_id")
+	return payload, nil
+}
+
+func hasTicket(raw map[string]interface{}) bool {
+	return mapString(raw["ticket_id"]) != "" ||
+		mapString(raw["external_id"]) != "" ||
+		mapString(raw["url"]) != "" ||
+		mapString(raw["system"]) != "" ||
+		mapString(raw["created_at"]) != ""
+}
+
+func automaticStopTime(status string, ticket map[string]interface{}, processedAt string) string {
+	if status == services.ProcessStatusSpamBlocked {
+		return processedAt
+	}
+	if hasTicket(ticket) {
+		if createdAt := mapString(ticket["created_at"]); createdAt != "" {
+			return createdAt
+		}
+		return processedAt
+	}
+	return ""
+}
+
+func (h *ProcessHandler) buildQueueCallRecord(
+	result *services.ProcessCallResult,
+	sourceFilename string,
+	queueID string,
+	existing map[string]interface{},
+	review map[string]interface{},
+) (map[string]interface{}, error) {
+	raw, err := processResultMap(result)
+	if err != nil {
+		return nil, fmt.Errorf("marshal queue payload: %w", err)
+	}
+
+	routing := mapObject(raw["routing"])
+	ticket := mapObject(raw["ticket"])
+	spamCheck := mapObject(raw["spam_check"])
+	if spamCheck == nil && routing != nil {
+		spamCheck = mapObject(routing["spam_check"])
+	}
+
+	requestReceivedAt := strings.TrimSpace(result.RequestReceivedAt)
+	if requestReceivedAt == "" {
+		requestReceivedAt = mapString(existing["createdAt"])
+	}
+	if requestReceivedAt == "" {
+		requestReceivedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+
+	processedAt := strings.TrimSpace(result.ProcessedAt)
+	if processedAt == "" {
+		processedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+
+	suggestedIntentID := ""
+	suggestedGroup := ""
+	priority := "medium"
+	confidence := 0.0
+	if routing != nil {
+		suggestedIntentID = mapString(routing["intent_id"])
+		suggestedGroup = mapString(routing["suggested_group"])
+		priority = normalizePriority(mapString(routing["priority"]))
+		if value, ok := routing["intent_confidence"].(float64); ok {
+			confidence = value
+		}
+	}
+
+	if review == nil {
+		if existingReview := mapObject(existing["review"]); existingReview != nil {
+			review = existingReview
+		} else {
+			review = map[string]interface{}{
+				"decision":    "pending",
+				"intentId":    suggestedIntentID,
+				"priority":    priority,
+				"group":       suggestedGroup,
+				"errorType":   "none",
+				"comment":     "",
+				"completedAt": "",
+			}
+		}
+	}
+
+	stopTime := automaticStopTime(strings.TrimSpace(result.Status), ticket, processedAt)
+	if mapString(review["completedAt"]) == "" && stopTime != "" {
+		review["completedAt"] = stopTime
+	}
+
+	slaMinutes := h.currentSLAMinutes()
+	slaStartedAt := requestReceivedAt
+	if existingSLA := mapObject(existing["sla"]); existingSLA != nil {
+		if value := mapString(existingSLA["startedAt"]); value != "" {
+			slaStartedAt = value
+		}
+		if value, ok := existingSLA["limitMinutes"].(float64); ok && int(value) > 0 {
+			slaMinutes = int(value)
+		}
+	}
+
+	callID := strings.TrimSpace(result.CallID)
+	if callID == "" && result.Transcript != nil {
+		callID = strings.TrimSpace(result.Transcript.CallID)
+	}
+
+	record := map[string]interface{}{
+		"id":             strings.TrimSpace(queueID),
+		"sourceFilename": strings.TrimSpace(sourceFilename),
+		"createdAt":      requestReceivedAt,
+		"processedAt":    processedAt,
+		"callId":         callID,
+		"status":         strings.TrimSpace(result.Status),
+		"transcript":     raw["transcript"],
+		"ticket":         raw["ticket"],
+		"raw":            raw,
+		"spamCheck":      spamCheck,
+		"review":         review,
+		"aiSuggestion": map[string]interface{}{
+			"intentId":   suggestedIntentID,
+			"confidence": confidence,
+			"priority":   priority,
+			"group":      suggestedGroup,
+		},
+		"sla": map[string]interface{}{
+			"limitMinutes": slaMinutes,
+			"startedAt":    slaStartedAt,
+			"stoppedAt":    stopTime,
+		},
+	}
+
+	if record["id"] == "" {
+		delete(record, "id")
+	}
+	if existing != nil && existing["lastFeedback"] != nil {
+		record["lastFeedback"] = existing["lastFeedback"]
+	}
+	return record, nil
+}
+
+func (h *ProcessHandler) saveQueueRecord(record map[string]interface{}) string {
+	if h.callQueueService == nil || record == nil {
+		return ""
+	}
+	saved, err := h.callQueueService.Save(record)
+	if err != nil {
+		log.Printf("Failed to save call queue record: %v", err)
+		return ""
+	}
+	return mapString(saved["id"])
+}
+
+func (h *ProcessHandler) updateQueueReview(queueID string, review map[string]interface{}, feedback interface{}) {
+	if h.callQueueService == nil || strings.TrimSpace(queueID) == "" {
+		return
+	}
+
+	record, err := h.callQueueService.Get(queueID)
+	if err != nil {
+		log.Printf("Failed to load call queue record %s: %v", queueID, err)
+		return
+	}
+	record["id"] = queueID
+	if review != nil {
+		record["review"] = review
+	}
+	if feedback != nil {
+		record["lastFeedback"] = feedback
+	}
+	if _, err := h.callQueueService.Save(record); err != nil {
+		log.Printf("Failed to update call queue record %s: %v", queueID, err)
+	}
+}
+
 func toFeedbackSegments(segments []clients.Segment) []services.FeedbackTranscriptSegment {
 	out := make([]services.FeedbackTranscriptSegment, 0, len(segments))
 	for _, seg := range segments {
@@ -126,6 +348,7 @@ func toFeedbackSegments(segments []clients.Segment) []services.FeedbackTranscrip
 
 func NewProcessHandler(
 	orchestrator *services.OrchestratorService,
+	callQueueService *services.CallQueueService,
 	appSettingsService *services.AppSettingsService,
 	routingConfigService *services.RoutingConfigService,
 	routingFeedbackService *services.RoutingFeedbackService,
@@ -139,6 +362,7 @@ func NewProcessHandler(
 
 	return &ProcessHandler{
 		orchestrator:           orchestrator,
+		callQueueService:       callQueueService,
 		appSettingsService:     appSettingsService,
 		routingConfigService:   routingConfigService,
 		routingFeedbackService: routingFeedbackService,
@@ -297,6 +521,11 @@ func (h *ProcessHandler) ProcessCall(c *gin.Context) {
 
 	result.RequestReceivedAt = requestReceivedAt.Format(time.RFC3339Nano)
 	result.ProcessedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if record, buildErr := h.buildQueueCallRecord(result, originalName, "", nil, nil); buildErr != nil {
+		log.Printf("Failed to build call queue record: %v", buildErr)
+	} else {
+		result.QueueID = h.saveQueueRecord(record)
+	}
 
 	// 4. Опционально: удаляем файл после обработки
 	// os.Remove(audioPath)
@@ -333,6 +562,7 @@ type spamReviewTranscriptPayload struct {
 }
 
 type spamReviewRequest struct {
+	QueueID        string                      `json:"queue_id"`
 	CallID         string                      `json:"call_id"`
 	SourceFilename string                      `json:"source_filename"`
 	Decision       string                      `json:"decision"`
@@ -341,6 +571,7 @@ type spamReviewRequest struct {
 }
 
 type routingReviewRequest struct {
+	QueueID        string                      `json:"queue_id"`
 	CallID         string                      `json:"call_id"`
 	SourceFilename string                      `json:"source_filename"`
 	Decision       string                      `json:"decision"`
@@ -403,6 +634,18 @@ func (h *ProcessHandler) ResolveSpamReview(c *gin.Context) {
 		"decision": payload.Decision,
 		"status":   result.Status,
 	})
+	result.ProcessedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	existing := map[string]interface{}{}
+	if payload.QueueID != "" && h.callQueueService != nil {
+		if current, getErr := h.callQueueService.Get(payload.QueueID); getErr == nil {
+			existing = current
+		}
+	}
+	if record, buildErr := h.buildQueueCallRecord(result, payload.SourceFilename, payload.QueueID, existing, nil); buildErr != nil {
+		log.Printf("Failed to build spam review call queue record: %v", buildErr)
+	} else {
+		result.QueueID = h.saveQueueRecord(record)
+	}
 
 	c.JSON(http.StatusOK, result)
 }
@@ -447,6 +690,27 @@ func (h *ProcessHandler) ResolveRoutingReview(c *gin.Context) {
 		"priority":        routing.Priority,
 		"suggested_group": routing.SuggestedGroup,
 	})
+	result.ProcessedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	existing := map[string]interface{}{}
+	if payload.QueueID != "" && h.callQueueService != nil {
+		if current, getErr := h.callQueueService.Get(payload.QueueID); getErr == nil {
+			existing = current
+		}
+	}
+	review := map[string]interface{}{
+		"decision":    strings.ToLower(strings.TrimSpace(payload.Decision)),
+		"intentId":    strings.TrimSpace(payload.Routing.IntentID),
+		"priority":    normalizePriority(payload.Routing.Priority),
+		"group":       strings.TrimSpace(payload.Routing.SuggestedGroup),
+		"errorType":   "none",
+		"comment":     "",
+		"completedAt": "",
+	}
+	if record, buildErr := h.buildQueueCallRecord(result, payload.SourceFilename, payload.QueueID, existing, review); buildErr != nil {
+		log.Printf("Failed to build routing review call queue record: %v", buildErr)
+	} else {
+		result.QueueID = h.saveQueueRecord(record)
+	}
 
 	c.JSON(http.StatusOK, result)
 }
@@ -495,12 +759,14 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 		"description": "Оркестрирует обработку звонков через все модули системы",
 		"endpoints": gin.H{
 			"process_call":     "POST /api/v1/process-call",
+			"calls":            "GET /api/v1/calls",
 			"app_settings":     "GET /api/v1/app-settings, PUT /api/v1/app-settings (admin)",
 			"routing_config":   "GET /api/v1/routing-config",
 			"routing_feedback": "POST /api/v1/routing-feedback",
 			"spam_review":      "POST /api/v1/spam-review",
 			"routing_review":   "POST /api/v1/routing-review",
 			"routing_model":    "GET /api/v1/routing-model/status",
+			"calls_admin":      "DELETE /api/v1/calls, DELETE /api/v1/calls/:id (admin)",
 			"audit_events":     "GET /api/v1/audit/events (admin)",
 			"health":           "GET /health",
 			"docs":             "GET /docs (если включен Swagger)",

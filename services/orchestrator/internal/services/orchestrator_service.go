@@ -48,6 +48,7 @@ func NewOrchestratorService(
 }
 
 type ProcessCallResult struct {
+	QueueID           string                         `json:"queue_id,omitempty"`
 	CallID            string                         `json:"call_id"`
 	Status            string                         `json:"status"`
 	Transcript        *clients.TranscriptionResponse `json:"transcript"`

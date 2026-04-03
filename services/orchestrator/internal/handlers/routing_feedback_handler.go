@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"orchestrator/internal/services"
 )
 
 type routingFeedbackRequest struct {
+	QueueID            string                               `json:"queue_id"`
 	CallID             string                               `json:"call_id"`
 	SourceFilename     string                               `json:"source_filename"`
 	Decision           string                               `json:"decision"`
@@ -66,6 +68,16 @@ func (h *ProcessHandler) SaveRoutingFeedback(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	h.updateQueueReview(payload.QueueID, map[string]interface{}{
+		"decision":    payload.Decision,
+		"intentId":    payload.Final.IntentID,
+		"priority":    normalizePriority(payload.Final.Priority),
+		"group":       payload.Final.Group,
+		"errorType":   payload.ErrorType,
+		"comment":     payload.Comment,
+		"completedAt": time.Now().UTC().Format(time.RFC3339Nano),
+	}, record)
 
 	c.JSON(http.StatusOK, record)
 }
