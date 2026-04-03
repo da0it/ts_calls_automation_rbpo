@@ -54,7 +54,7 @@ Optional AI hints: add `--include-ai-hints`.
 When you fill `final_intent_id`, `final_group_id`, `final_priority` in CSV, run:
 
 ```bash
-python3 /Users/dmitrii/ts_calls_automation_submodule/scripts/evaluate_routing_csv.py \
+python3 /Users/dmitrii/ts_calls_automation_submodule/tests/evaluate_routing_csv.py \
   --csv /absolute/path/to/secure_labeling_dataset.csv
 ```
 

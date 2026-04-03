@@ -14,7 +14,7 @@ cd services/ticket_creation && go test ./...
 - Batch end-to-end processing through the HTTP orchestrator API:
 
 ```bash
-python3 scripts/evaluate_calls_folder.py \
+python3 tests/evaluate_calls_folder.py \
   --base-url http://localhost:8000 \
   --username admin \
   --password 'YOUR_PASSWORD' \
@@ -26,7 +26,7 @@ This produces `results.csv`, `results.jsonl`, `summary.json` and can be used as 
 - Simple functional checks through the HTTP API:
 
 ```bash
-python3 scripts/run_functional_tests.py \
+python3 tests/run_functional_tests.py \
   --base-url http://localhost:8000 \
   --admin-username admin \
   --admin-password 'YOUR_PASSWORD' \
@@ -36,7 +36,7 @@ python3 scripts/run_functional_tests.py \
 For fuller coverage of requirement `2.3.2.1.1`, pass multiple files, for example one `wav`, one `mp3`, one `ogg`:
 
 ```bash
-python3 scripts/run_functional_tests.py \
+python3 tests/run_functional_tests.py \
   --base-url http://localhost:8000 \
   --admin-username admin \
   --admin-password 'YOUR_PASSWORD' \
@@ -48,7 +48,7 @@ python3 scripts/run_functional_tests.py \
 Optional role-model check:
 
 ```bash
-python3 scripts/run_functional_tests.py \
+python3 tests/run_functional_tests.py \
   --base-url http://localhost:8000 \
   --admin-username admin \
   --admin-password 'YOUR_PASSWORD' \
@@ -75,7 +75,7 @@ Reports:
 If you already have a labeled CSV with file paths, intents and spam labels, you can pass it into the batch evaluation:
 
 ```bash
-python3 scripts/evaluate_calls_folder.py \
+python3 tests/evaluate_calls_folder.py \
   --base-url http://localhost:8000 \
   --username admin \
   --password 'YOUR_PASSWORD' \
@@ -101,7 +101,7 @@ The resulting `results.csv` will include:
 After manual labeling of routing results, run:
 
 ```bash
-python3 scripts/evaluate_routing_csv.py \
+python3 tests/evaluate_routing_csv.py \
   --csv /absolute/path/to/secure_labeling_dataset.csv
 ```
 
@@ -110,7 +110,7 @@ The script computes `accuracy`, `macro_precision`, `macro_recall`, `macro_f1`, `
 If your CSV contains only intent labels such as `call_purpose` plus model output `pred_intent`, that is also supported now:
 
 ```bash
-python3 scripts/evaluate_routing_csv.py \
+python3 tests/evaluate_routing_csv.py \
   --csv /absolute/path/to/results.csv \
   --intent-true-col true_intent \
   --intent-pred-col pred_intent
@@ -123,7 +123,7 @@ When `group` or `priority` columns are missing, the script skips those metrics a
 Prepare a CSV with two columns: a reference transcript and the ASR hypothesis. Then run:
 
 ```bash
-python3 scripts/evaluate_transcription_wer.py \
+python3 tests/evaluate_transcription_wer.py \
   --csv /absolute/path/to/transcription_eval.csv \
   --ref-col reference_text \
   --hyp-col hypothesis_text
@@ -151,7 +151,7 @@ Prepare a CSV with at least these columns:
 Run:
 
 ```bash
-python3 scripts/evaluate_ab_test.py \
+python3 tests/evaluate_ab_test.py \
   --csv /absolute/path/to/ab_results.csv
 ```
 
@@ -176,7 +176,7 @@ python3 scripts/batch_prepare_labeling.py \
 After operators fill `final_intent_id`, `final_group_id`, `final_priority`, run:
 
 ```bash
-python3 scripts/evaluate_ab_test.py \
+python3 tests/evaluate_ab_test.py \
   --mode paired \
   --csv /absolute/path/to/secure_labeling_dataset.csv
 ```
@@ -216,7 +216,7 @@ AUDIO_FILES=/absolute/path/to/call1.wav,/absolute/path/to/call2.wav \
 WORKLOAD_MODEL=closed \
 SUMMARY_JSON=load_test_summary.json \
 SUMMARY_TEXT=load_test_summary.txt \
-k6 run scripts/load_test_process_call_advanced.js
+k6 run tests/load_test_process_call_advanced.js
 ```
 
 The advanced scenario supports:
@@ -247,7 +247,7 @@ TARGET_RATE_1=2 \
 TARGET_RATE_2=4 \
 PRE_ALLOCATED_VUS=8 \
 MAX_VUS=32 \
-k6 run scripts/load_test_process_call_advanced.js
+k6 run tests/load_test_process_call_advanced.js
 ```
 
 Useful environment overrides:

@@ -10,14 +10,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
+TOOLS_DIR = ROOT / "tests"
 
 
 class EvaluationScriptsTest(unittest.TestCase):
     maxDiff = None
 
     def _run_script(self, script_name: str, *args: str) -> subprocess.CompletedProcess[str]:
-        script_path = SCRIPTS_DIR / script_name
+        script_path = TOOLS_DIR / script_name
         return subprocess.run(
             [sys.executable, str(script_path), *args],
             check=True,
