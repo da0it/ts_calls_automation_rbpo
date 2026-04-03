@@ -1262,23 +1262,27 @@
     function toCallRecord(file, payload) {
       const routing = payload && payload.routing ? payload.routing : {};
       const spamCheck = normalizeSpamCheck((routing && routing.spam_check) || (payload && payload.spam_check));
+      const ticket = normalizeTicket(payload && payload.ticket);
       const status = String(payload && payload.status || 'completed').trim() || 'completed';
       const callId = (payload && payload.call_id) || '';
       const now = new Date().toISOString();
+      const requestReceivedAt = String(payload && payload.request_received_at || '').trim() || now;
+      const processedAt = String(payload && payload.processed_at || '').trim() || now;
       const suggestedIntentId = routing.intent_id || 'misc.triage';
       const intentMeta = getIntentMeta(suggestedIntentId);
       const defaultGroup = intentMeta ? intentMeta.default_group : (state.catalog.groups[0] ? state.catalog.groups[0].id : '');
       const defaultPriority = intentMeta ? intentMeta.priority : 'medium';
       const slaMinutes = normalizeSlaMinutes(state.appSettings && state.appSettings.slaMinutes);
-      const autoStoppedAt = status === 'spam_blocked' ? now : '';
+      const autoStoppedAt = status === 'spam_blocked' ? processedAt : '';
 
       return {
         id: crypto.randomUUID ? crypto.randomUUID() : 'call-' + Date.now(),
         sourceFilename: file.name,
-        createdAt: now,
+        createdAt: requestReceivedAt,
         callId,
         status,
         transcript: payload && payload.transcript ? payload.transcript : { segments: [] },
+        ticket,
         raw: payload,
         spamCheck,
         review: {
@@ -1298,7 +1302,7 @@
         },
         sla: {
           limitMinutes: slaMinutes,
-          startedAt: now,
+          startedAt: requestReceivedAt,
           stoppedAt: autoStoppedAt
         }
       };
@@ -1316,6 +1320,13 @@
         skipped: Boolean(raw.skipped),
         backend: String(raw.backend || '').trim()
       };
+    }
+
+    function normalizeTicket(raw) {
+      if (!raw || typeof raw !== 'object') return null;
+      const url = String(raw.url || '').trim();
+      if (!url) return null;
+      return { url };
     }
 
     function isAwaitingSpamReview(call) {
@@ -1489,6 +1500,10 @@
             <div class="kv"><div class="k">Thresholds</div><div class="v">${escapeHtml(Number(spamCheck && spamCheck.threshold_low || 0).toFixed(2))} / ${escapeHtml(Number(spamCheck && spamCheck.threshold_high || 0).toFixed(2))}</div></div>
             <div class="kv"><div class="k">Backend</div><div class="v">${escapeHtml(spamCheck && spamCheck.backend || '-')}</div></div>
       ` : '';
+      const ticketUrl = String((call.ticket && call.ticket.url) || (call.raw && call.raw.ticket && call.raw.ticket.url) || '').trim();
+      const ticketMetaRow = ticketUrl ? `
+            <div class="kv"><div class="k">Ticket</div><div class="v"><a href="${escapeAttr(ticketUrl)}" target="_blank" rel="noopener noreferrer">Open ticket</a></div></div>
+      ` : '';
       const saveDecisionHelp = isAdmin()
         ? ' Save Decision = persist decision and send feedback for model improvement.'
         : '';
@@ -1500,6 +1515,7 @@
             <div class="kv"><div class="k">Source file</div><div class="v">${escapeHtml(call.sourceFilename || '-')}</div></div>
             <div class="kv"><div class="k">Call ID</div><div class="v">${escapeHtml(call.callId || '-')}</div></div>
             <div class="kv"><div class="k">Status</div><div class="v">${escapeHtml(call.status || 'completed')}</div></div>
+            ${ticketMetaRow}
             <div class="kv"><div class="k">SLA</div><div class="v js-sla-summary" data-call-id="${escapeAttr(call.id)}">-</div></div>
           </div>
         </section>

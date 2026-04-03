@@ -119,6 +119,8 @@ func (h *ProcessHandler) writeAudit(
 // @Failure 500 {object} map[string]string
 // @Router /api/v1/process-call [post]
 func (h *ProcessHandler) ProcessCall(c *gin.Context) {
+	requestReceivedAt := time.Now().UTC()
+
 	// 1. Получаем загруженный файл
 	file, err := c.FormFile("audio")
 	if err != nil {
@@ -218,6 +220,9 @@ func (h *ProcessHandler) ProcessCall(c *gin.Context) {
 		})
 		return
 	}
+
+	result.RequestReceivedAt = requestReceivedAt.Format(time.RFC3339Nano)
+	result.ProcessedAt = time.Now().UTC().Format(time.RFC3339Nano)
 
 	// 4. Опционально: удаляем файл после обработки
 	// os.Remove(audioPath)
@@ -432,10 +437,10 @@ func (h *ProcessHandler) ResolveRoutingReview(c *gin.Context) {
 	}
 
 	h.writeAudit(c, "call.routing_review", "call", transcript.CallID, "success", map[string]interface{}{
-		"decision": payload.Decision,
-		"status":   result.Status,
-		"intent_id": routing.IntentID,
-		"priority": routing.Priority,
+		"decision":        payload.Decision,
+		"status":          result.Status,
+		"intent_id":       routing.IntentID,
+		"priority":        routing.Priority,
 		"suggested_group": routing.SuggestedGroup,
 	})
 

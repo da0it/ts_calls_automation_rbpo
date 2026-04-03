@@ -18,11 +18,11 @@ const (
 )
 
 type OrchestratorService struct {
-	transcriptionClient *clients.TranscriptionClient
-	routingClient       *clients.RoutingClient
-	ticketClient        *clients.TicketClient
-	notificationClient  *clients.NotificationClient
-	entityClient        *clients.EntityClient
+	transcriptionClient              *clients.TranscriptionClient
+	routingClient                    *clients.RoutingClient
+	ticketClient                     *clients.TicketClient
+	notificationClient               *clients.NotificationClient
+	entityClient                     *clients.EntityClient
 	routingReviewConfidenceThreshold float64
 }
 
@@ -41,26 +41,28 @@ func NewOrchestratorService(
 		routingReviewConfidenceThreshold = 1.0
 	}
 	return &OrchestratorService{
-		transcriptionClient: transcriptionClient,
-		routingClient:       routingClient,
-		ticketClient:        ticketClient,
-		notificationClient:  notificationClient,
-		entityClient:        entityClient,
+		transcriptionClient:              transcriptionClient,
+		routingClient:                    routingClient,
+		ticketClient:                     ticketClient,
+		notificationClient:               notificationClient,
+		entityClient:                     entityClient,
 		routingReviewConfidenceThreshold: routingReviewConfidenceThreshold,
 	}
 }
 
 type ProcessCallResult struct {
-	CallID         string                         `json:"call_id"`
-	Status         string                         `json:"status"`
-	Transcript     *clients.TranscriptionResponse `json:"transcript"`
-	Routing        *clients.RoutingResponse       `json:"routing"`
-	SpamCheck      *clients.SpamCheckResponse     `json:"spam_check,omitempty"`
-	Entities       *clients.Entities              `json:"entities"`
-	Ticket         *clients.TicketCreated         `json:"ticket"`
-	Notification   *clients.NotificationResult    `json:"notification,omitempty"`
-	ProcessingTime map[string]float64             `json:"processing_time"`
-	TotalTime      float64                        `json:"total_time"`
+	CallID            string                         `json:"call_id"`
+	Status            string                         `json:"status"`
+	Transcript        *clients.TranscriptionResponse `json:"transcript"`
+	Routing           *clients.RoutingResponse       `json:"routing"`
+	SpamCheck         *clients.SpamCheckResponse     `json:"spam_check,omitempty"`
+	Entities          *clients.Entities              `json:"entities"`
+	Ticket            *clients.TicketCreated         `json:"ticket"`
+	Notification      *clients.NotificationResult    `json:"notification,omitempty"`
+	ProcessingTime    map[string]float64             `json:"processing_time"`
+	TotalTime         float64                        `json:"total_time"`
+	RequestReceivedAt string                         `json:"request_received_at,omitempty"`
+	ProcessedAt       string                         `json:"processed_at,omitempty"`
 }
 
 type ContinueAfterSpamReviewInput struct {
