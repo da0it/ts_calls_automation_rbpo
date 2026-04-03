@@ -21,7 +21,6 @@ type OrchestratorService struct {
 	transcriptionClient              *clients.TranscriptionClient
 	routingClient                    *clients.RoutingClient
 	ticketClient                     *clients.TicketClient
-	notificationClient               *clients.NotificationClient
 	entityClient                     *clients.EntityClient
 	routingReviewConfidenceThreshold float64
 }
@@ -30,7 +29,6 @@ func NewOrchestratorService(
 	transcriptionClient *clients.TranscriptionClient,
 	routingClient *clients.RoutingClient,
 	ticketClient *clients.TicketClient,
-	notificationClient *clients.NotificationClient,
 	entityClient *clients.EntityClient,
 	routingReviewConfidenceThreshold float64,
 ) *OrchestratorService {
@@ -44,7 +42,6 @@ func NewOrchestratorService(
 		transcriptionClient:              transcriptionClient,
 		routingClient:                    routingClient,
 		ticketClient:                     ticketClient,
-		notificationClient:               notificationClient,
 		entityClient:                     entityClient,
 		routingReviewConfidenceThreshold: routingReviewConfidenceThreshold,
 	}
@@ -58,7 +55,6 @@ type ProcessCallResult struct {
 	SpamCheck         *clients.SpamCheckResponse     `json:"spam_check,omitempty"`
 	Entities          *clients.Entities              `json:"entities"`
 	Ticket            *clients.TicketCreated         `json:"ticket"`
-	Notification      *clients.NotificationResult    `json:"notification,omitempty"`
 	ProcessingTime    map[string]float64             `json:"processing_time"`
 	TotalTime         float64                        `json:"total_time"`
 	RequestReceivedAt string                         `json:"request_received_at,omitempty"`
@@ -176,7 +172,7 @@ func (s *OrchestratorService) completeNonSpamCall(
 	startTime time.Time,
 	processingTime map[string]float64,
 ) (*ProcessCallResult, error) {
-	log.Println("Step 3/5: Extracting entities...")
+	log.Println("Step 3/4: Extracting entities...")
 	stepStart := time.Now()
 	entities := emptyEntities()
 	if s.entityClient != nil {
@@ -191,7 +187,7 @@ func (s *OrchestratorService) completeNonSpamCall(
 	log.Printf("✓ Entity extraction completed in %.2fs (order_ids: %d, phones: %d, emails: %d)",
 		processingTime["entity_extraction"], len(entities.OrderIDs), len(entities.Phones), len(entities.Emails))
 
-	log.Println("Step 4/5: Creating ticket...")
+	log.Println("Step 4/4: Creating ticket...")
 	stepStart = time.Now()
 	ticket, err := s.ticketClient.CreateTicket(transcript, routing, entities)
 	if err != nil {
@@ -200,18 +196,6 @@ func (s *OrchestratorService) completeNonSpamCall(
 	processingTime["ticket_creation"] = time.Since(stepStart).Seconds()
 	log.Printf("✓ Ticket created in %.2fs (ID: %s, URL: %s)",
 		processingTime["ticket_creation"], ticket.TicketID, ticket.URL)
-
-	log.Println("Step 5/5: Sending notifications...")
-	stepStart = time.Now()
-	var notification *clients.NotificationResult
-	notification, err = s.notificationClient.SendNotification(transcript, routing, entities, ticket)
-	if err != nil {
-		log.Printf("⚠ Notification sending failed (non-fatal): %v", err)
-		notification = &clients.NotificationResult{Success: false}
-	}
-	processingTime["notification"] = time.Since(stepStart).Seconds()
-	log.Printf("✓ Notifications sent in %.2fs (success: %v)",
-		processingTime["notification"], notification.Success)
 
 	totalTime := time.Since(startTime).Seconds()
 	log.Printf("Call processing completed successfully in %.2fs", totalTime)
@@ -224,7 +208,6 @@ func (s *OrchestratorService) completeNonSpamCall(
 		SpamCheck:      cloneSpamCheck(routing.SpamCheck),
 		Entities:       entities,
 		Ticket:         ticket,
-		Notification:   notification,
 		ProcessingTime: processingTime,
 		TotalTime:      totalTime,
 	}, nil
@@ -344,7 +327,7 @@ func (s *OrchestratorService) ContinueAfterSpamReview(input ContinueAfterSpamRev
 			TotalTime:      totalTime,
 		}, nil
 	case "not_spam":
-		log.Println("Step 2/5: Routing call after manual spam review...")
+		log.Println("Routing call after manual spam review...")
 		stepStart := time.Now()
 		routing, err := s.routeTranscript(input.Transcript, true)
 		if err != nil {

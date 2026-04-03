@@ -15,7 +15,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List
 
 from pii_redactor import redact_segments
 
@@ -78,19 +78,9 @@ def _http_json(
         raise RuntimeError(f"{method} {url} failed: {e}") from e
 
 
-def _encode_multipart_form(
-    fields: Dict[str, str],
-    file_field: str,
-    file_path: Path,
-) -> Tuple[bytes, str]:
+def _encode_multipart_form(file_field: str, file_path: Path) -> tuple[bytes, str]:
     boundary = f"----secure-label-{uuid.uuid4().hex}"
     chunks: List[bytes] = []
-
-    for name, value in fields.items():
-        chunks.append(f"--{boundary}\r\n".encode("utf-8"))
-        chunks.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
-        chunks.append(str(value).encode("utf-8"))
-        chunks.append(b"\r\n")
 
     file_name = file_path.name
     content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
@@ -116,7 +106,7 @@ def _http_multipart_json(
     headers: Dict[str, str] | None = None,
     timeout: int = 3600,
 ) -> Dict[str, object]:
-    body, boundary = _encode_multipart_form({}, file_field=file_field, file_path=file_path)
+    body, boundary = _encode_multipart_form(file_field=file_field, file_path=file_path)
     req_headers = {"Accept": "application/json", "Content-Type": f"multipart/form-data; boundary={boundary}"}
     if headers:
         req_headers.update(headers)
@@ -134,20 +124,12 @@ def _http_multipart_json(
 
 def _collect_audio_files(root: Path, exts: Iterable[str], recursive: bool) -> List[Path]:
     allowed = {e.lower() for e in exts}
-    if recursive:
-        files = [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in allowed]
-    else:
-        files = [p for p in root.glob("*") if p.is_file() and p.suffix.lower() in allowed]
-    return sorted(files)
+    finder = root.rglob if recursive else root.glob
+    return sorted(p for p in finder("*") if p.is_file() and p.suffix.lower() in allowed)
 
 
 def _join_segments_text(segments: List[Dict[str, object]]) -> str:
-    parts: List[str] = []
-    for seg in segments:
-        text = str(seg.get("text") or "").strip()
-        if text:
-            parts.append(text)
-    return " ".join(parts)
+    return " ".join(str(seg.get("text") or "").strip() for seg in segments if str(seg.get("text") or "").strip())
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
@@ -163,9 +145,7 @@ def _normalize_text(text: str) -> str:
 
 def _is_greeting(text: str) -> bool:
     t = _normalize_text(text)
-    if not t:
-        return False
-    return any(pat.match(t) for pat in GREETING_PATTERNS)
+    return bool(t) and any(pat.match(t) for pat in GREETING_PATTERNS)
 
 
 def _is_low_information(text: str) -> bool:

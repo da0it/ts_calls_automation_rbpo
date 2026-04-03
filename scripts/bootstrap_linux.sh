@@ -57,10 +57,6 @@ main() {
     cd "$ROOT_DIR/services/ticket_creation"
     go mod download
   )
-  (
-    cd "$ROOT_DIR/services/notification_sender"
-    go mod download
-  )
 
   log "Bootstrap complete."
   log "Next: set env values in $ROOT_DIR/configs/*.env and run ./scripts/start_linux_stack.sh"

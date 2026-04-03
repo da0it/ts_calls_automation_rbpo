@@ -6,6 +6,4 @@ import "ticket_module/internal/models"
 // TicketSystemAdapter интерфейс для разных тикет-систем
 type TicketSystemAdapter interface {
 	CreateTicket(payload *models.TicketSystemPayload) (*models.TicketCreated, error)
-	GetTicket(externalID string) (*models.TicketCreated, error)
-	UpdateTicket(externalID string, update map[string]interface{}) error
 }

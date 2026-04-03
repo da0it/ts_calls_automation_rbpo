@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Dict, List, Tuple
 
-from transcribe_logic.whisperx_device import resolve_whisperx_device
+from transcribe_logic.config import resolve_whisperx_device
 from transcribe_logic.whisperx_worker import (
     _maybe_assign_diarization_speakers,
     _to_segments,

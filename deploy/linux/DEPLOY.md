@@ -26,7 +26,6 @@ Edit:
 - `configs/routing.env`
 - `configs/ticket.env`
 - `configs/orchestrator.env`
-- `configs/notification.env`
 - `configs/entity.env`
 
 Important:

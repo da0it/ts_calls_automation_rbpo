@@ -83,12 +83,6 @@ func main() {
 	}
 	defer ticketClient.Close()
 
-	notificationClient, err := clients.NewNotificationClient(cfg.NotificationGRPCAddr)
-	if err != nil {
-		log.Fatalf("Failed to initialize notification client: %v", err)
-	}
-	defer notificationClient.Close()
-
 	entityClient := clients.NewEntityClient(cfg.EntityServiceURL)
 
 	log.Println("✓ All clients initialized")
@@ -98,7 +92,6 @@ func main() {
 		transcriptionClient,
 		routingClient,
 		ticketClient,
-		notificationClient,
 		entityClient,
 		cfg.RoutingReviewConfidenceThreshold,
 	)
@@ -270,13 +263,6 @@ func setupRouter(
 		admin.Use(adminMw)
 		{
 			admin.PUT("/app-settings", h.UpdateAppSettings)
-			admin.PUT("/routing-config", h.UpdateRoutingConfig)
-			admin.POST("/routing-config/groups", h.CreateRoutingGroup)
-			admin.DELETE("/routing-config/groups/:id", h.DeleteRoutingGroup)
-			admin.DELETE("/routing-config/intents/:id", h.DeleteRoutingIntent)
-			admin.POST("/routing-model/reload", h.ReloadRoutingModel)
-			admin.POST("/routing-model/train", h.TrainRoutingModel)
-			admin.POST("/routing-model/train-csv", h.TrainRoutingModelCSV)
 			admin.GET("/audit/events", h.ListAuditEvents)
 
 			// User management

@@ -2,7 +2,6 @@
 package config
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -23,24 +22,23 @@ type Config struct {
 	CORSAllowedOrigins string
 
 	// gRPC адреса сервисов
-	TranscriptionGRPCAddr     string
-	RoutingGRPCAddr           string
-	TicketGRPCAddr            string
-	TicketRPCTimeoutSeconds   int
-	NotificationGRPCAddr      string
-	EntityServiceURL          string
+	TranscriptionGRPCAddr            string
+	RoutingGRPCAddr                  string
+	TicketGRPCAddr                   string
+	TicketRPCTimeoutSeconds          int
+	EntityServiceURL                 string
 	RoutingReviewConfidenceThreshold float64
-	RoutingIntentsPath        string
-	RoutingGroupsPath         string
-	RoutingFeedbackPath       string
-	RoutingAutoLearn          bool
-	RoutingAutoLearnLimit     int
-	SpamGateFeedbackPath      string
-	SpamGatePositiveLabel     string
-	SpamGateNegativeLabel     string
-	RouterAdminURL            string
-	RouterAdminToken          string
-	RouterAdminTimeoutSeconds int
+	RoutingIntentsPath               string
+	RoutingGroupsPath                string
+	RoutingFeedbackPath              string
+	RoutingAutoLearn                 bool
+	RoutingAutoLearnLimit            int
+	SpamGateFeedbackPath             string
+	SpamGatePositiveLabel            string
+	SpamGateNegativeLabel            string
+	RouterAdminURL                   string
+	RouterAdminToken                 string
+	RouterAdminTimeoutSeconds        int
 
 	// Auth / DB
 	DatabaseURL    string
@@ -54,33 +52,32 @@ func Load() *Config {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		HTTPPort:                  getEnv("HTTP_PORT", getEnv("SERVER_PORT", "8000")),
-		GRPCPort:                  getEnv("GRPC_PORT", "9000"),
-		HTTPTLSEnabled:            getEnvBool("HTTP_TLS_ENABLED", false),
-		HTTPTLSCertFile:           getEnv("HTTP_TLS_CERT_FILE", ""),
-		HTTPTLSKeyFile:            getEnv("HTTP_TLS_KEY_FILE", ""),
-		GRPCTLSEnabled:            getEnvBool("ORCH_GRPC_TLS_ENABLED", false),
-		GRPCTLSCertFile:           getEnv("ORCH_GRPC_TLS_CERT_FILE", ""),
-		GRPCTLSKeyFile:            getEnv("ORCH_GRPC_TLS_KEY_FILE", ""),
-		CORSAllowedOrigins:        getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:3000"),
-		TranscriptionGRPCAddr:     getEnv("TRANSCRIPTION_GRPC_ADDR", "localhost:50051"),
-		RoutingGRPCAddr:           getEnv("ROUTING_GRPC_ADDR", "localhost:50052"),
-		TicketGRPCAddr:            getEnv("TICKET_GRPC_ADDR", "localhost:50054"),
-		TicketRPCTimeoutSeconds:   getEnvInt("TICKET_RPC_TIMEOUT_SECONDS", 300),
-		NotificationGRPCAddr:      getEnv("NOTIFICATION_GRPC_ADDR", "localhost:50055"),
-		EntityServiceURL:          getEnv("ENTITY_SERVICE_URL", "http://localhost:5001"),
+		HTTPPort:                         getEnv("HTTP_PORT", getEnv("SERVER_PORT", "8000")),
+		GRPCPort:                         getEnv("GRPC_PORT", "9000"),
+		HTTPTLSEnabled:                   getEnvBool("HTTP_TLS_ENABLED", false),
+		HTTPTLSCertFile:                  getEnv("HTTP_TLS_CERT_FILE", ""),
+		HTTPTLSKeyFile:                   getEnv("HTTP_TLS_KEY_FILE", ""),
+		GRPCTLSEnabled:                   getEnvBool("ORCH_GRPC_TLS_ENABLED", false),
+		GRPCTLSCertFile:                  getEnv("ORCH_GRPC_TLS_CERT_FILE", ""),
+		GRPCTLSKeyFile:                   getEnv("ORCH_GRPC_TLS_KEY_FILE", ""),
+		CORSAllowedOrigins:               getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:3000"),
+		TranscriptionGRPCAddr:            getEnv("TRANSCRIPTION_GRPC_ADDR", "localhost:50051"),
+		RoutingGRPCAddr:                  getEnv("ROUTING_GRPC_ADDR", "localhost:50052"),
+		TicketGRPCAddr:                   getEnv("TICKET_GRPC_ADDR", "localhost:50054"),
+		TicketRPCTimeoutSeconds:          getEnvInt("TICKET_RPC_TIMEOUT_SECONDS", 300),
+		EntityServiceURL:                 getEnv("ENTITY_SERVICE_URL", "http://localhost:5001"),
 		RoutingReviewConfidenceThreshold: getEnvFloat("ROUTING_REVIEW_CONFIDENCE_THRESHOLD", getEnvFloat("ROUTER_MIN_CONFIDENCE", 0.5)),
-		RoutingIntentsPath:        getEnv("ROUTING_INTENTS_PATH", "../router/configs/intents.json"),
-		RoutingGroupsPath:         getEnv("ROUTING_GROUPS_PATH", "../router/configs/groups.json"),
-		RoutingFeedbackPath:       getEnv("ROUTING_FEEDBACK_PATH", "./data/routing_feedback.jsonl"),
-		RoutingAutoLearn:          getEnv("ROUTING_AUTO_LEARN", "1") == "1",
-		RoutingAutoLearnLimit:     getEnvInt("ROUTING_AUTO_LEARN_LIMIT", 50),
-		SpamGateFeedbackPath:      getEnv("SPAM_GATE_FEEDBACK_PATH", "./data/spam_gate_feedback.jsonl"),
-		SpamGatePositiveLabel:     getEnv("SPAM_GATE_POSITIVE_LABEL", "spam"),
-		SpamGateNegativeLabel:     getEnv("SPAM_GATE_NEGATIVE_LABEL", "not_spam"),
-		RouterAdminURL:            getEnv("ROUTER_ADMIN_URL", "http://localhost:8082"),
-		RouterAdminToken:          getEnv("ROUTER_ADMIN_TOKEN", ""),
-		RouterAdminTimeoutSeconds: getEnvInt("ROUTER_ADMIN_TIMEOUT_SECONDS", 600),
+		RoutingIntentsPath:               getEnv("ROUTING_INTENTS_PATH", "../router/configs/intents.json"),
+		RoutingGroupsPath:                getEnv("ROUTING_GROUPS_PATH", "../router/configs/groups.json"),
+		RoutingFeedbackPath:              getEnv("ROUTING_FEEDBACK_PATH", "./data/routing_feedback.jsonl"),
+		RoutingAutoLearn:                 getEnv("ROUTING_AUTO_LEARN", "1") == "1",
+		RoutingAutoLearnLimit:            getEnvInt("ROUTING_AUTO_LEARN_LIMIT", 50),
+		SpamGateFeedbackPath:             getEnv("SPAM_GATE_FEEDBACK_PATH", "./data/spam_gate_feedback.jsonl"),
+		SpamGatePositiveLabel:            getEnv("SPAM_GATE_POSITIVE_LABEL", "spam"),
+		SpamGateNegativeLabel:            getEnv("SPAM_GATE_NEGATIVE_LABEL", "not_spam"),
+		RouterAdminURL:                   getEnv("ROUTER_ADMIN_URL", "http://localhost:8082"),
+		RouterAdminToken:                 getEnv("ROUTER_ADMIN_TOKEN", ""),
+		RouterAdminTimeoutSeconds:        getEnvInt("ROUTER_ADMIN_TIMEOUT_SECONDS", 600),
 
 		DatabaseURL:    getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/tickets?sslmode=disable"),
 		JWTSecret:      getEnv("JWT_SECRET", ""),
@@ -93,33 +90,43 @@ func Load() *Config {
 		log.Fatal("JWT_SECRET is required")
 	}
 
-	log.Printf("Orchestrator config loaded:")
-	log.Printf("  - HTTP port: %s", cfg.HTTPPort)
-	log.Printf("  - gRPC port: %s", cfg.GRPCPort)
-	log.Printf("  - HTTP TLS enabled: %v", cfg.HTTPTLSEnabled)
-	log.Printf("  - gRPC TLS enabled: %v", cfg.GRPCTLSEnabled)
-	log.Printf("  - CORS allowed origins: %s", cfg.CORSAllowedOrigins)
-	log.Printf("  - Transcription gRPC: %s", cfg.TranscriptionGRPCAddr)
-	log.Printf("  - Routing gRPC: %s", cfg.RoutingGRPCAddr)
-	log.Printf("  - Ticket gRPC: %s", cfg.TicketGRPCAddr)
-	log.Printf("  - Ticket RPC timeout (sec): %d", cfg.TicketRPCTimeoutSeconds)
-	log.Printf("  - Notification gRPC: %s", cfg.NotificationGRPCAddr)
-	log.Printf("  - Entity service URL: %s", cfg.EntityServiceURL)
-	log.Printf("  - Routing review confidence threshold: %.3f", cfg.RoutingReviewConfidenceThreshold)
-	log.Printf("  - Routing intents path: %s", cfg.RoutingIntentsPath)
-	log.Printf("  - Routing groups path: %s", cfg.RoutingGroupsPath)
-	log.Printf("  - Routing feedback path: %s", cfg.RoutingFeedbackPath)
-	log.Printf("  - Routing auto learn: %v", cfg.RoutingAutoLearn)
-	log.Printf("  - Routing auto learn limit: %d", cfg.RoutingAutoLearnLimit)
-	log.Printf("  - Spam gate feedback path: %s", cfg.SpamGateFeedbackPath)
-	log.Printf("  - Spam gate labels: %s / %s", cfg.SpamGatePositiveLabel, cfg.SpamGateNegativeLabel)
-	log.Printf("  - Router admin URL: %s", cfg.RouterAdminURL)
-	log.Printf("  - Router admin timeout (sec): %d", cfg.RouterAdminTimeoutSeconds)
-	log.Printf("  - Database URL: %s", cfg.DatabaseURL)
-	log.Printf("  - JWT expiry hours: %d", cfg.JWTExpiryHours)
-	log.Printf("  - Admin username: %s", cfg.AdminUsername)
-
+	logConfig(cfg)
 	return cfg
+}
+
+func logConfig(cfg *Config) {
+	log.Println("Orchestrator config loaded:")
+	items := []struct {
+		name  string
+		value interface{}
+	}{
+		{"HTTP port", cfg.HTTPPort},
+		{"gRPC port", cfg.GRPCPort},
+		{"HTTP TLS enabled", cfg.HTTPTLSEnabled},
+		{"gRPC TLS enabled", cfg.GRPCTLSEnabled},
+		{"CORS allowed origins", cfg.CORSAllowedOrigins},
+		{"Transcription gRPC", cfg.TranscriptionGRPCAddr},
+		{"Routing gRPC", cfg.RoutingGRPCAddr},
+		{"Ticket gRPC", cfg.TicketGRPCAddr},
+		{"Ticket RPC timeout (sec)", cfg.TicketRPCTimeoutSeconds},
+		{"Entity service URL", cfg.EntityServiceURL},
+		{"Routing review confidence threshold", cfg.RoutingReviewConfidenceThreshold},
+		{"Routing intents path", cfg.RoutingIntentsPath},
+		{"Routing groups path", cfg.RoutingGroupsPath},
+		{"Routing feedback path", cfg.RoutingFeedbackPath},
+		{"Routing auto learn", cfg.RoutingAutoLearn},
+		{"Routing auto learn limit", cfg.RoutingAutoLearnLimit},
+		{"Spam gate feedback path", cfg.SpamGateFeedbackPath},
+		{"Spam gate labels", cfg.SpamGatePositiveLabel + " / " + cfg.SpamGateNegativeLabel},
+		{"Router admin URL", cfg.RouterAdminURL},
+		{"Router admin timeout (sec)", cfg.RouterAdminTimeoutSeconds},
+		{"Database URL", cfg.DatabaseURL},
+		{"JWT expiry hours", cfg.JWTExpiryHours},
+		{"Admin username", cfg.AdminUsername},
+	}
+	for _, item := range items {
+		log.Printf("  - %s: %v", item.name, item.value)
+	}
 }
 
 func getEnv(key, defaultValue string) string {
@@ -130,12 +137,13 @@ func getEnv(key, defaultValue string) string {
 }
 
 func getEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		var parsed int
-		_, err := fmt.Sscanf(value, "%d", &parsed)
-		if err == nil && parsed > 0 {
-			return parsed
-		}
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return defaultValue
+	}
+	parsed, err := strconv.Atoi(value)
+	if err == nil && parsed > 0 {
+		return parsed
 	}
 	return defaultValue
 }

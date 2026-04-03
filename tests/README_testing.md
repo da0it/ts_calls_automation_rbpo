@@ -4,11 +4,11 @@ For the diploma, it is enough to refer to 3 main test files:
 
 1. `tests/run_functional_tests.py`
    Functional checks of the external HTTP API:
-   login, validation of input audio, successful processing, ticket creation, notification, audit log, role separation.
+   login, validation of input audio, successful processing, ticket creation, audit log, role separation.
 
 2. `services/orchestrator/tests/orchestrator_integration_test.go`
    Integration tests of the internal service chain:
-   transcription -> routing -> entity extraction -> ticket creation -> notification,
+   transcription -> routing -> entity extraction -> ticket creation,
    and stopping the pipeline when manual routing review is required.
 
 3. `tests/evaluate_ab_test.py`

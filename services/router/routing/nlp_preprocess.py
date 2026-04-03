@@ -10,10 +10,6 @@ from razdel import sentenize, tokenize as razdel_tokenize
 
 logger = logging.getLogger(__name__)
 
-_NATASHA_READY = False
-_NATASHA_MORPH = None
-_NATASHA_SEGMENTER = None
-_NATASHA_MORPH_TAGGER = None
 _STANZA_PIPELINE = None
 
 STOP_WORDS = {
@@ -179,39 +175,6 @@ def lemmatize_with_backend(
     fallback = tokenize_ru(norm_text, keep_special_tokens=keep_special_tokens)
     return fallback, fallback[:], "none"
 
-
-def _lemmatize_natasha(norm_text: str, *, keep_special_tokens: bool) -> Tuple[List[str], List[str]]:
-    try:
-        segmenter, morph_tagger, morph = _ensure_natasha()
-        from natasha import Doc
-    except Exception as exc:
-        logger.warning("Failed to initialize natasha lemmatizer: %s", exc)
-        return [], []
-
-    try:
-        doc = Doc(norm_text)
-        doc.segment(segmenter)
-        doc.tag_morph(morph_tagger)
-    except Exception as exc:
-        logger.warning("Natasha failed while processing text: %s", exc)
-        return [], []
-
-    tokens: List[str] = []
-    lemmas: List[str] = []
-    for token in doc.tokens:
-        try:
-            token.lemmatize(morph)
-        except Exception:
-            token.lemma = token.text
-        tok = token.text
-        lem = token.lemma
-        if not keep_special_tokens and tok.startswith("<") and tok.endswith(">"):
-            continue
-        tokens.append(tok)
-        lemmas.append(lem)
-    return tokens, lemmas
-
-
 def _lemmatize_stanza(
     norm_text: str,
     *,
@@ -241,26 +204,6 @@ def _lemmatize_stanza(
             tokens.append(tok)
             lemmas.append(lem or tok)
     return tokens, lemmas
-
-
-def _ensure_natasha() -> Tuple[Any, Any, Any]:
-    global _NATASHA_READY, _NATASHA_MORPH, _NATASHA_SEGMENTER, _NATASHA_MORPH_TAGGER
-    if _NATASHA_READY and _NATASHA_MORPH is not None and _NATASHA_SEGMENTER is not None and _NATASHA_MORPH_TAGGER is not None:
-        return _NATASHA_SEGMENTER, _NATASHA_MORPH_TAGGER, _NATASHA_MORPH
-
-    from natasha import MorphVocab, NewsEmbedding, NewsMorphTagger, Segmenter
-
-    morph = MorphVocab()
-    segmenter = Segmenter()
-    embedding = NewsEmbedding()
-    morph_tagger = NewsMorphTagger(embedding)
-
-    _NATASHA_MORPH = morph
-    _NATASHA_SEGMENTER = segmenter
-    _NATASHA_MORPH_TAGGER = morph_tagger
-    _NATASHA_READY = True
-    return segmenter, morph_tagger, morph
-
 
 def _ensure_stanza(stanza_resources_dir: str):
     global _STANZA_PIPELINE

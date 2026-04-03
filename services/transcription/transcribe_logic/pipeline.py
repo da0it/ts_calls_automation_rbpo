@@ -6,7 +6,7 @@ import tempfile
 from typing import Any, Dict, List, Optional
 
 from transcribe_logic.audio_utils import to_wav_16k_mono_preprocessed
-from transcribe_logic.whisperx_device import get_whisperx_device_from_env
+from transcribe_logic.config import get_whisperx_settings
 from transcribe_logic.whisperx_ext import whisperx_transcribe_via_cli
 from transcribe_logic.whisperx_runtime import whisperx_transcribe_inprocess
 
@@ -59,7 +59,7 @@ def transcribe_with_roles(
     audio_path: str,
     *,
     hf_token: Optional[str] = None,
-    no_stem: bool = False,  # kept for backward compatibility; currently unused.
+    no_stem: bool = False,
     whisper_repo_dir: str = "",
     whisper_venv_python: str = "",
 ) -> Dict[str, Any]:
@@ -73,14 +73,7 @@ def transcribe_with_roles(
         wav = os.path.join(td, "audio_mono.wav")
         to_wav_16k_mono_preprocessed(audio_path, wav)
 
-        common_kwargs = dict(
-            model=os.getenv("WHISPERX_MODEL", "large-v3"),
-            language=os.getenv("WHISPERX_LANGUAGE", "ru"),
-            device=get_whisperx_device_from_env(),
-            compute_type=os.getenv("WHISPERX_COMPUTE_TYPE", "int8"),
-            batch_size=int(os.getenv("WHISPERX_BATCH_SIZE", "1")),
-            vad_method=os.getenv("WHISPERX_VAD_METHOD", "silero").strip().lower(),
-        )
+        common_kwargs = get_whisperx_settings()
 
         persistent = os.getenv("WHISPERX_PERSISTENT", "1").strip().lower() in {"1", "true", "yes", "on"}
         if persistent:
@@ -91,7 +84,6 @@ def transcribe_with_roles(
             segments = whisperx_transcribe_via_cli(
                 wav,
                 venv_python=venv_python,
-                **common_kwargs,
             )
             mode = "whisperx_cli"
 

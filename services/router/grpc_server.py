@@ -85,23 +85,12 @@ class RoutingService(pb2_grpc.RoutingServiceServicer):
         intents_path: Path,
         intents: Dict[str, Dict[str, Any]],
         analyzer: RubertEmbeddingAnalyzer,
-        *,
-        feedback_path: str,
-        tuned_model_path: str,
-        train_defaults: Dict[str, Any],
     ) -> None:
         self.intents_path = intents_path
         self.intents = intents
         self._intents_mtime = intents_path.stat().st_mtime if intents_path.exists() else 0.0
         self._lock = RLock()
         self.analyzer = analyzer
-
-        self.feedback_path = feedback_path
-        self.tuned_model_path = tuned_model_path
-        self.train_defaults = dict(train_defaults)
-
-        self._train_lock = RLock()
-        self._training_in_progress = False
 
     def _get_intents(self) -> Dict[str, Dict[str, Any]]:
         try:
@@ -181,76 +170,14 @@ class RoutingService(pb2_grpc.RoutingServiceServicer):
             return pb2.RouteResponse()
 
     def get_model_status(self) -> Dict[str, Any]:
-        with self._train_lock:
-            training = self._training_in_progress
-
         intents = self._get_intents()
         tuned_status = self.analyzer.get_training_status(intents)
 
         return {
             "service": "router-admin",
-            "training_in_progress": training,
             "intents_count": len(intents),
             "tuned_model": tuned_status,
         }
-
-    def reload_tuned_model(self) -> Dict[str, Any]:
-        self.analyzer.reload_tuned_head_from_disk()
-        return self.get_model_status()
-
-    def train_tuned_model(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        payload = payload or {}
-
-        with self._train_lock:
-            if self._training_in_progress:
-                raise RuntimeError("training already in progress")
-            self._training_in_progress = True
-
-        try:
-            intents = self._get_intents()
-
-            epochs = _as_int(payload.get("epochs"), self.train_defaults.get("epochs", 3), 1, 12)
-            batch_size = _as_int(payload.get("batch_size"), self.train_defaults.get("batch_size", 16), 4, 64)
-            random_seed = _as_int(payload.get("random_seed"), self.train_defaults.get("random_seed", 42), 1, 2**31 - 1)
-            learning_rate = _as_float(payload.get("learning_rate"), self.train_defaults.get("learning_rate", 2e-5), 1e-6, 1e-3)
-            val_ratio = _as_float(payload.get("val_ratio"), self.train_defaults.get("val_ratio", 0.2), 0.0, 0.5)
-            feedback_path = str(payload.get("feedback_path") or self.feedback_path)
-            output_path = str(payload.get("output_path") or self.tuned_model_path)
-
-            report = self.analyzer.train_tuned_head(
-                intents,
-                feedback_path=feedback_path,
-                output_path=output_path,
-                epochs=epochs,
-                batch_size=batch_size,
-                learning_rate=learning_rate,
-                val_ratio=val_ratio,
-                random_seed=random_seed,
-            )
-            return {
-                "ok": True,
-                "report": report,
-                "status": self.get_model_status(),
-            }
-        finally:
-            with self._train_lock:
-                self._training_in_progress = False
-
-
-def _as_int(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        parsed = int(value)
-    except Exception:
-        parsed = int(default)
-    return max(low, min(high, parsed))
-
-
-def _as_float(value: Any, default: float, low: float, high: float) -> float:
-    try:
-        parsed = float(value)
-    except Exception:
-        parsed = float(default)
-    return max(low, min(high, parsed))
 
 
 def _optional_float_env(name: str) -> Optional[float]:
@@ -288,69 +215,28 @@ def make_admin_handler(service: RoutingService, admin_token: str):
             if not self._authorize():
                 return
 
-            payload = self._read_json_body()
-            if payload is None:
-                return
-
-            if self.path == "/admin/model/train":
-                try:
-                    result = service.train_tuned_model(payload)
-                    _json_response(self, HTTPStatus.OK, result)
-                except Exception as exc:
-                    logger.exception("admin train failed")
-                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-                return
-
-            if self.path == "/admin/model/reload":
-                try:
-                    result = service.reload_tuned_model()
-                    _json_response(self, HTTPStatus.OK, result)
-                except Exception as exc:
-                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-                return
-
             _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not found"})
 
         def do_OPTIONS(self) -> None:
             self.send_response(HTTPStatus.NO_CONTENT)
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.end_headers()
 
         def log_message(self, fmt: str, *args) -> None:
             logger.info("admin %s - %s", self.address_string(), fmt % args)
 
-        def _read_json_body(self) -> Optional[Dict[str, Any]]:
-            content_length = int(self.headers.get("Content-Length", "0"))
-            if content_length <= 0:
-                return {}
-
-            raw = self.rfile.read(content_length)
-            if not raw:
-                return {}
-
-            try:
-                parsed = json.loads(raw.decode("utf-8"))
-                if isinstance(parsed, dict):
-                    return parsed
-                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "request body must be a JSON object"})
-                return None
-            except Exception:
-                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "invalid json body"})
-                return None
-
         def _authorize(self) -> bool:
             if not admin_token:
                 return True
 
             auth_header = self.headers.get("Authorization", "")
-            token_header = self.headers.get("X-Admin-Token", "")
             bearer = ""
             if auth_header.startswith("Bearer "):
                 bearer = auth_header[len("Bearer ") :].strip()
 
-            if bearer == admin_token or token_header == admin_token:
+            if bearer == admin_token:
                 return True
 
             _json_response(self, HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
@@ -367,7 +253,6 @@ def serve() -> None:
         os.getenv("ROUTER_INTENTS_PATH", str(Path(__file__).parent / "configs" / "intents.json"))
     )
 
-    feedback_path = os.getenv("ROUTER_FEEDBACK_PATH", str(Path(__file__).parent / "configs" / "routing_feedback.jsonl"))
     finetuned_enabled = os.getenv("ROUTER_FINETUNED_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
     default_finetuned_model_path = str(Path(__file__).parent / "configs" / "router_finetuned_model")
     finetuned_model_path = os.getenv("ROUTER_FINETUNED_MODEL_PATH", default_finetuned_model_path)
@@ -394,14 +279,6 @@ def serve() -> None:
     spam_gate_score_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_THRESHOLD")
     spam_gate_score_allow_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_ALLOW_THRESHOLD")
     spam_gate_positive_label = os.getenv("ROUTER_SPAM_GATE_POSITIVE_LABEL", "spam").strip() or "spam"
-
-    train_defaults = {
-        "epochs": int(os.getenv("ROUTER_TRAIN_EPOCHS", "3")),
-        "batch_size": int(os.getenv("ROUTER_TRAIN_BATCH_SIZE", "16")),
-        "learning_rate": float(os.getenv("ROUTER_TRAIN_LR", "2e-5")),
-        "val_ratio": float(os.getenv("ROUTER_TRAIN_VAL_RATIO", "0.2")),
-        "random_seed": int(os.getenv("ROUTER_TRAIN_SEED", "42")),
-    }
 
     intents = load_intents(intents_path)
     logger.info("loaded intents config from %s (%d intents)", intents_path, len(intents))
@@ -433,9 +310,6 @@ def serve() -> None:
         intents_path=intents_path,
         intents=intents,
         analyzer=analyzer,
-        feedback_path=feedback_path,
-        tuned_model_path=tuned_model_path,
-        train_defaults=train_defaults,
     )
 
     admin_server = None

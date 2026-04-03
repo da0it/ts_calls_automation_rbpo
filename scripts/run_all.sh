@@ -12,23 +12,23 @@ declare -a SERVICE_NAMES=()
 declare -a SERVICE_PIDS=()
 CLEANED_UP=0
 
-if [[ -x "$HOME/whisperx_venv/bin/python" ]]; then
-  DEFAULT_TRANSCRIPTION_PYTHON="$HOME/whisperx_venv/bin/python"
-elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
-  DEFAULT_TRANSCRIPTION_PYTHON="$ROOT_DIR/.venv/bin/python"
-else
-  DEFAULT_TRANSCRIPTION_PYTHON="python3"
-fi
+pick_python() {
+  local first="${1:-}"
+  local second="${2:-}"
+  if [[ -n "$first" && -x "$first" ]]; then
+    echo "$first"
+    return
+  fi
+  if [[ -n "$second" && -x "$second" ]]; then
+    echo "$second"
+    return
+  fi
+  echo "python3"
+}
 
-if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
-  DEFAULT_ENTITY_PYTHON="$ROOT_DIR/.venv/bin/python"
-else
-  DEFAULT_ENTITY_PYTHON="python3"
-fi
-
-TRANSCRIPTION_PYTHON="${TRANSCRIPTION_PYTHON:-$DEFAULT_TRANSCRIPTION_PYTHON}"
-ENTITY_PYTHON="${ENTITY_PYTHON:-$DEFAULT_ENTITY_PYTHON}"
-ROUTER_PYTHON="${ROUTER_PYTHON:-$ROOT_DIR/services/router/venv/bin/python}"
+TRANSCRIPTION_PYTHON="${TRANSCRIPTION_PYTHON:-$(pick_python "$HOME/whisperx_venv/bin/python" "$ROOT_DIR/.venv/bin/python")}"
+ENTITY_PYTHON="${ENTITY_PYTHON:-$(pick_python "$ROOT_DIR/.venv/bin/python")}"
+ROUTER_PYTHON="${ROUTER_PYTHON:-$(pick_python "$ROOT_DIR/services/router/venv/bin/python" "$ROOT_DIR/.venv/bin/python")}"
 DATABASE_URL="${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/tickets?sslmode=disable}"
 SKIP_DB_MIGRATION="${SKIP_DB_MIGRATION:-0}"
 
@@ -206,12 +206,6 @@ main() {
     "$ROOT_DIR/services/ticket_creation" \
     "$ROOT_DIR/configs/ticket.env" \
     "DATABASE_URL='$DATABASE_URL' GOCACHE='$ROOT_DIR/.gocache' go run cmd/server/main.go"
-
-  start_service \
-    "notification_sender" \
-    "$ROOT_DIR/services/notification_sender" \
-    "$ROOT_DIR/configs/notification.env" \
-    "GOCACHE='$ROOT_DIR/.gocache' go run cmd/server/main.go"
 
   start_service \
     "orchestrator" \

@@ -44,7 +44,7 @@ except ImportError:
     warmup_whisperx_runtime = None
 
 try:
-    from transcribe_logic.whisperx_device import get_whisperx_device_from_env
+    from transcribe_logic.config import get_whisperx_device_from_env
 except ImportError:
     get_whisperx_device_from_env = None
 

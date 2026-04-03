@@ -1,67 +1,50 @@
-# gRPC Call Processing Pipeline
+# Call Processing Subsystem
 
-Реализована цепочка через gRPC:
+Локальная микросервисная подсистема для обработки телефонных обращений:
 
-1. Поступление аудио
-2. Транскрибация
-3. Маршрутизация
-4. Формирование тикета
+1. прием аудиофайла;
+2. транскрибация и диаризация;
+3. антиспам и маршрутизация;
+4. извлечение сущностей;
+5. создание тикета;
+6. передача результата во внешнюю тикет-систему.
 
-## Контракт
+## Основные части
 
-Общий protobuf-контракт: `proto/call_processing.proto`
+- `services/transcription` - распознавание речи
+- `services/router` - классификация, антиспам, маршрутизация
+- `services/entity_extraction` - NER
+- `services/ticket_creation` - генерация карточки и регистрация тикета
+- `services/orchestrator` - точка входа и координация пайплайна
 
-## Сервисы
+Общий gRPC-контракт: `proto/call_processing.proto`
 
-- `services/transcription/grpc_server.py` (`TRANSCRIPTION_GRPC_PORT`, default `50051`)
-- `services/router/grpc_server.py` (`ROUTER_GRPC_PORT`, default `50052`)
-- `services/ticket_creation` gRPC сервер (`GRPC_PORT`, default `50054`)
-- `services/orchestrator` gRPC сервер (`GRPC_PORT`, default `9000`)
+## Быстрый запуск
 
-## Конфиги
+- Docker: `docker compose up --build`
+- Локальный запуск сервисов: `scripts/run_all.sh`
 
-Пример переменных:
+Основные env-файлы лежат в `configs/`.
 
-- `configs/transcription.env`
-- `configs/routing.env`
-- `configs/ticket.env`
-- `configs/orchestrator.env`
+## Проверка
 
-## Security notes
-
-- CORS теперь ограничивается списком `CORS_ALLOWED_ORIGINS` (по умолчанию localhost-ориджины).
-- Для админа доступен аудит действий: `GET /api/v1/audit/events` (только admin JWT).
-- В ticket service PII в описание тикета по умолчанию отключены:
-  `TICKET_INCLUDE_PII_IN_DESCRIPTION=0`.
-- Генерация заголовка и summary для тикета по умолчанию выполняется локально через `ollama`
-  (`LLM_PROVIDER=ollama`, текущий рабочий дефолт `gemma3:4b`).
-- Для полностью локального режима ticket service ходит только в `OLLAMA_BASE_URL`
-  и не отправляет транскрипты во внешние API.
-- Для enterprise-подключения новой тикет-системы без правок кода используйте
-  `TICKET_SYSTEM=webhook` и настройте один файл `configs/ticket.env`:
-  `TICKET_WEBHOOK_URL`, `TICKET_WEBHOOK_HEADERS_JSON`,
-  `TICKET_WEBHOOK_EXTERNAL_ID_PATH`, `TICKET_WEBHOOK_URL_PATH`.
-- Для интеграции с Scripted REST API SimpleOne включите `TICKET_SYSTEM=simpleone`
-  и задайте `SIMPLEONE_ENDPOINT_URL` и при необходимости `SIMPLEONE_BEARER_TOKEN`.
-- В orchestrator/transcription убраны лишние детали из логов (имена файлов/пути временных файлов).
-
-## Go проверка
+- функциональные тесты: `tests/run_functional_tests.py`
+- интеграционные тесты оркестратора: `services/orchestrator/tests/orchestrator_integration_test.go`
+- сравнение с ручной классификацией: `tests/evaluate_ab_test.py`
 
 ```bash
 cd services/orchestrator && go test ./...
-cd services/ticket_creation && go test ./...
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-## Linux deployment
+## Безопасность
 
-Production-like Linux deployment (systemd + bootstrap scripts):
+- JWT-аутентификация и роли `admin` / `operator`
+- аудит действий через `/api/v1/audit/events`
+- локальная обработка данных без облачных LLM по умолчанию
+- ограничение CORS и хранение чувствительных настроек в env
 
-- `/Users/dmitrii/ts_calls_automation_submodule/deploy/linux/DEPLOY.md`
+## Документация по развертыванию
 
-## Docker deployment
-
-Full stack in Docker Compose:
-
-- `/Users/dmitrii/ts_calls_automation_submodule/deploy/docker/DEPLOY.md`
-
-16.02.2026
+- Linux: `deploy/linux/DEPLOY.md`
+- Docker: `deploy/docker/DEPLOY.md`

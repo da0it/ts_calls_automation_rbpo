@@ -16,6 +16,14 @@ import (
 	"orchestrator/internal/services"
 )
 
+var allowedAudioFormats = map[string]struct{}{
+	".mp3":  {},
+	".wav":  {},
+	".m4a":  {},
+	".flac": {},
+	".ogg":  {},
+}
+
 type ProcessHandler struct {
 	orchestrator           *services.OrchestratorService
 	appSettingsService     *services.AppSettingsService
@@ -40,6 +48,80 @@ func envBool(name string, def bool) bool {
 	default:
 		return def
 	}
+}
+
+type reviewSpamCheckPayload struct {
+	Status         string  `json:"status"`
+	PredictedLabel string  `json:"predicted_label"`
+	Confidence     float64 `json:"confidence"`
+	ThresholdLow   float64 `json:"threshold_low"`
+	ThresholdHigh  float64 `json:"threshold_high"`
+	Reason         string  `json:"reason"`
+	Backend        string  `json:"backend"`
+}
+
+type reviewRoutingPayload struct {
+	IntentID         string  `json:"intent_id"`
+	IntentConfidence float64 `json:"intent_confidence"`
+	Priority         string  `json:"priority"`
+	SuggestedGroup   string  `json:"suggested_group"`
+}
+
+func isAllowedAudioExt(ext string) bool {
+	_, ok := allowedAudioFormats[ext]
+	return ok
+}
+
+func buildTranscript(callID string, payload spamReviewTranscriptPayload) *clients.TranscriptionResponse {
+	transcript := &clients.TranscriptionResponse{
+		CallID:      strings.TrimSpace(payload.CallID),
+		Segments:    payload.Segments,
+		RoleMapping: payload.RoleMapping,
+		Metadata:    payload.Metadata,
+	}
+	if transcript.CallID == "" {
+		transcript.CallID = strings.TrimSpace(callID)
+	}
+	if transcript.Metadata == nil {
+		transcript.Metadata = map[string]interface{}{}
+	}
+	return transcript
+}
+
+func buildSpamCheck(payload reviewSpamCheckPayload) *clients.SpamCheckResponse {
+	if payload.Status == "" &&
+		payload.PredictedLabel == "" &&
+		payload.Confidence == 0 &&
+		payload.ThresholdLow == 0 &&
+		payload.ThresholdHigh == 0 &&
+		payload.Reason == "" &&
+		payload.Backend == "" {
+		return nil
+	}
+
+	return &clients.SpamCheckResponse{
+		Status:         payload.Status,
+		PredictedLabel: payload.PredictedLabel,
+		Confidence:     payload.Confidence,
+		ThresholdLow:   payload.ThresholdLow,
+		ThresholdHigh:  payload.ThresholdHigh,
+		Reason:         payload.Reason,
+		Backend:        payload.Backend,
+	}
+}
+
+func toFeedbackSegments(segments []clients.Segment) []services.FeedbackTranscriptSegment {
+	out := make([]services.FeedbackTranscriptSegment, 0, len(segments))
+	for _, seg := range segments {
+		out = append(out, services.FeedbackTranscriptSegment{
+			Start:   seg.Start,
+			End:     seg.End,
+			Speaker: seg.Speaker,
+			Role:    seg.Role,
+			Text:    seg.Text,
+		})
+	}
+	return out
 }
 
 func NewProcessHandler(
@@ -142,15 +224,7 @@ func (h *ProcessHandler) ProcessCall(c *gin.Context) {
 		float64(file.Size)/1024/1024,
 	)
 
-	// Валидация формата
-	allowedFormats := map[string]bool{
-		".mp3":  true,
-		".wav":  true,
-		".m4a":  true,
-		".flac": true,
-		".ogg":  true,
-	}
-	if !allowedFormats[ext] {
+	if !isAllowedAudioExt(ext) {
 		h.writeAudit(c, "call.process", "call", "", "failed", map[string]interface{}{
 			"reason":     "unsupported_audio_format",
 			"audio_ext":  ext,
@@ -263,15 +337,7 @@ type spamReviewRequest struct {
 	SourceFilename string                      `json:"source_filename"`
 	Decision       string                      `json:"decision"`
 	Transcript     spamReviewTranscriptPayload `json:"transcript"`
-	SpamCheck      struct {
-		Status         string  `json:"status"`
-		PredictedLabel string  `json:"predicted_label"`
-		Confidence     float64 `json:"confidence"`
-		ThresholdLow   float64 `json:"threshold_low"`
-		ThresholdHigh  float64 `json:"threshold_high"`
-		Reason         string  `json:"reason"`
-		Backend        string  `json:"backend"`
-	} `json:"spam_check"`
+	SpamCheck      reviewSpamCheckPayload      `json:"spam_check"`
 }
 
 type routingReviewRequest struct {
@@ -279,21 +345,8 @@ type routingReviewRequest struct {
 	SourceFilename string                      `json:"source_filename"`
 	Decision       string                      `json:"decision"`
 	Transcript     spamReviewTranscriptPayload `json:"transcript"`
-	Routing        struct {
-		IntentID         string  `json:"intent_id"`
-		IntentConfidence float64 `json:"intent_confidence"`
-		Priority         string  `json:"priority"`
-		SuggestedGroup   string  `json:"suggested_group"`
-	} `json:"routing"`
-	SpamCheck struct {
-		Status         string  `json:"status"`
-		PredictedLabel string  `json:"predicted_label"`
-		Confidence     float64 `json:"confidence"`
-		ThresholdLow   float64 `json:"threshold_low"`
-		ThresholdHigh  float64 `json:"threshold_high"`
-		Reason         string  `json:"reason"`
-		Backend        string  `json:"backend"`
-	} `json:"spam_check"`
+	Routing        reviewRoutingPayload        `json:"routing"`
+	SpamCheck      reviewSpamCheckPayload      `json:"spam_check"`
 }
 
 func (h *ProcessHandler) ResolveSpamReview(c *gin.Context) {
@@ -308,36 +361,14 @@ func (h *ProcessHandler) ResolveSpamReview(c *gin.Context) {
 		return
 	}
 
-	transcript := &clients.TranscriptionResponse{
-		CallID:      strings.TrimSpace(payload.Transcript.CallID),
-		Segments:    payload.Transcript.Segments,
-		RoleMapping: payload.Transcript.RoleMapping,
-		Metadata:    payload.Transcript.Metadata,
-	}
-	if transcript.CallID == "" {
-		transcript.CallID = strings.TrimSpace(payload.CallID)
-	}
-	if transcript.Metadata == nil {
-		transcript.Metadata = map[string]interface{}{}
-	}
-
-	feedbackSegments := make([]services.FeedbackTranscriptSegment, 0, len(transcript.Segments))
-	for _, seg := range transcript.Segments {
-		feedbackSegments = append(feedbackSegments, services.FeedbackTranscriptSegment{
-			Start:   seg.Start,
-			End:     seg.End,
-			Speaker: seg.Speaker,
-			Role:    seg.Role,
-			Text:    seg.Text,
-		})
-	}
+	transcript := buildTranscript(payload.CallID, payload.Transcript)
 
 	if _, err := h.spamFeedbackService.SaveDecision(services.SpamGateFeedbackRequest{
 		CallID:             transcript.CallID,
 		SourceFilename:     payload.SourceFilename,
 		Decision:           payload.Decision,
 		TranscriptText:     segmentsToPlainText(transcript.Segments, 8000),
-		TranscriptSegments: feedbackSegments,
+		TranscriptSegments: toFeedbackSegments(transcript.Segments),
 		TrainingSample:     segmentsToPlainText(transcript.Segments, 280),
 		SpamCheck: services.SpamGateFeedbackMeta{
 			Status:         payload.SpamCheck.Status,
@@ -383,18 +414,7 @@ func (h *ProcessHandler) ResolveRoutingReview(c *gin.Context) {
 		return
 	}
 
-	transcript := &clients.TranscriptionResponse{
-		CallID:      strings.TrimSpace(payload.Transcript.CallID),
-		Segments:    payload.Transcript.Segments,
-		RoleMapping: payload.Transcript.RoleMapping,
-		Metadata:    payload.Transcript.Metadata,
-	}
-	if transcript.CallID == "" {
-		transcript.CallID = strings.TrimSpace(payload.CallID)
-	}
-	if transcript.Metadata == nil {
-		transcript.Metadata = map[string]interface{}{}
-	}
+	transcript := buildTranscript(payload.CallID, payload.Transcript)
 
 	routing := &clients.RoutingResponse{
 		IntentID:         strings.TrimSpace(payload.Routing.IntentID),
@@ -402,23 +422,7 @@ func (h *ProcessHandler) ResolveRoutingReview(c *gin.Context) {
 		Priority:         strings.TrimSpace(payload.Routing.Priority),
 		SuggestedGroup:   strings.TrimSpace(payload.Routing.SuggestedGroup),
 	}
-	if payload.SpamCheck.Status != "" ||
-		payload.SpamCheck.PredictedLabel != "" ||
-		payload.SpamCheck.Confidence != 0 ||
-		payload.SpamCheck.ThresholdLow != 0 ||
-		payload.SpamCheck.ThresholdHigh != 0 ||
-		payload.SpamCheck.Reason != "" ||
-		payload.SpamCheck.Backend != "" {
-		routing.SpamCheck = &clients.SpamCheckResponse{
-			Status:         payload.SpamCheck.Status,
-			PredictedLabel: payload.SpamCheck.PredictedLabel,
-			Confidence:     payload.SpamCheck.Confidence,
-			ThresholdLow:   payload.SpamCheck.ThresholdLow,
-			ThresholdHigh:  payload.SpamCheck.ThresholdHigh,
-			Reason:         payload.SpamCheck.Reason,
-			Backend:        payload.SpamCheck.Backend,
-		}
-	}
+	routing.SpamCheck = buildSpamCheck(payload.SpamCheck)
 
 	result, err := h.orchestrator.ContinueAfterRoutingReview(services.ContinueAfterRoutingReviewInput{
 		CallID:         payload.CallID,
@@ -492,13 +496,11 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 		"endpoints": gin.H{
 			"process_call":     "POST /api/v1/process-call",
 			"app_settings":     "GET /api/v1/app-settings, PUT /api/v1/app-settings (admin)",
-			"routing_config":   "GET/PUT /api/v1/routing-config",
-			"routing_groups":   "POST/DELETE /api/v1/routing-config/groups",
-			"routing_intents":  "DELETE /api/v1/routing-config/intents/:id",
+			"routing_config":   "GET /api/v1/routing-config",
 			"routing_feedback": "POST /api/v1/routing-feedback",
 			"spam_review":      "POST /api/v1/spam-review",
 			"routing_review":   "POST /api/v1/routing-review",
-			"routing_model":    "GET /api/v1/routing-model/status, POST /api/v1/routing-model/reload, POST /api/v1/routing-model/train, POST /api/v1/routing-model/train-csv",
+			"routing_model":    "GET /api/v1/routing-model/status",
 			"audit_events":     "GET /api/v1/audit/events (admin)",
 			"health":           "GET /health",
 			"docs":             "GET /docs (если включен Swagger)",
@@ -507,7 +509,8 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 			"1. Transcription + Diarization",
 			"2. Spam Gate (allow / block / manual review)",
 			"3. Routing (RuBERT Intent Classification + low-confidence review)",
-			"4. Ticket Creation",
+			"4. Entity Extraction",
+			"5. Ticket Creation",
 		},
 	})
 }

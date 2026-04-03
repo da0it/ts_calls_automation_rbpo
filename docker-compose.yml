@@ -196,20 +196,6 @@ services:
     ports:
       - "50054:50054"
 
-  notification_sender:
-    build:
-      context: ./services/notification_sender
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file:
-      - ./configs/notification.env
-    environment:
-      GRPC_PORT: 50055
-      HTTP_PORT: 8085
-      NOTIFICATION_CHANNELS: log
-    ports:
-      - "50055:50055"
-
   orchestrator:
     build:
       context: ./services/orchestrator
@@ -224,7 +210,6 @@ services:
       ROUTING_GRPC_ADDR: router:50052
       TICKET_GRPC_ADDR: ticket_creation:50054
       TICKET_RPC_TIMEOUT_SECONDS: ${TICKET_RPC_TIMEOUT_SECONDS:-300}
-      NOTIFICATION_GRPC_ADDR: notification_sender:50055
       ENTITY_SERVICE_URL: http://entity_extraction:5001
       ROUTING_REVIEW_CONFIDENCE_THRESHOLD: "0.50"
       ROUTING_INTENTS_PATH: /shared-config/routing_intents.json
@@ -248,8 +233,6 @@ services:
       router:
         condition: service_healthy
       ticket_creation:
-        condition: service_started
-      notification_sender:
         condition: service_started
       entity_extraction:
         condition: service_healthy

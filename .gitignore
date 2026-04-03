@@ -25,7 +25,9 @@ build/
 # Runtime / Logs
 # ==========================
 .run/
+exports/
 services/orchestrator/uploads/
+functional_test_report.json
 
 # ==========================
 # Environment & Secrets

@@ -14,7 +14,6 @@ Edit these files:
 - `configs/routing.env`
 - `configs/ticket.env`
 - `configs/orchestrator.env`
-- `configs/notification.env`
 - `configs/entity.env`
 
 Important settings:

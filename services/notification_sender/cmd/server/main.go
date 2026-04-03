@@ -100,12 +100,6 @@ func buildChannels(cfg *config.Config) []adapters.ChannelAdapter {
 				cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser,
 				cfg.SMTPPassword, cfg.SMTPFrom, cfg.EmailTo,
 			))
-		case "telegram":
-			channels = append(channels, adapters.NewTelegramAdapter(
-				cfg.TelegramBotToken, cfg.TelegramChatID,
-			))
-		case "slack":
-			channels = append(channels, adapters.NewSlackAdapter(cfg.SlackWebhookURL))
 		case "log":
 			channels = append(channels, adapters.NewLogAdapter())
 		default:

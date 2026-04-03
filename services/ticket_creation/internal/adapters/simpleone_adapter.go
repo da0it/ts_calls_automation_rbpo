@@ -1,7 +1,11 @@
 package adapters
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -15,30 +19,28 @@ type SimpleOneAdapterConfig struct {
 }
 
 type SimpleOneAdapter struct {
-	webhook *WebhookAdapter
+	endpointURL string
+	bearerToken string
+	httpClient  *http.Client
 }
 
 func NewSimpleOneAdapter(cfg SimpleOneAdapterConfig) (*SimpleOneAdapter, error) {
-	headers := map[string]string{}
-	if cfg.BearerToken != "" {
-		headers["Authorization"] = "Bearer " + cfg.BearerToken
+	endpointURL := strings.TrimSpace(cfg.EndpointURL)
+	if endpointURL == "" {
+		return nil, fmt.Errorf("simpleone endpoint URL is required")
 	}
-
-	webhook, err := NewWebhookAdapter(WebhookAdapterConfig{
-		EndpointURL: cfg.EndpointURL,
-		Headers:     headers,
-		Timeout:     cfg.Timeout,
-		SystemName:  "simpleone",
-	})
-	if err != nil {
-		return nil, err
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 30 * time.Second
 	}
-
-	return &SimpleOneAdapter{webhook: webhook}, nil
+	return &SimpleOneAdapter{
+		endpointURL: endpointURL,
+		bearerToken: strings.TrimSpace(cfg.BearerToken),
+		httpClient:  &http.Client{Timeout: cfg.Timeout},
+	}, nil
 }
 
 func (a *SimpleOneAdapter) CreateTicket(payload *models.TicketSystemPayload) (*models.TicketCreated, error) {
-	if a == nil || a.webhook == nil {
+	if a == nil {
 		return nil, fmt.Errorf("simpleone adapter is not configured")
 	}
 	if payload == nil {
@@ -48,21 +50,37 @@ func (a *SimpleOneAdapter) CreateTicket(payload *models.TicketSystemPayload) (*m
 		return nil, fmt.Errorf("ticket payload draft is required")
 	}
 
-	return a.webhook.createTicketWithBody(buildSimpleOnePayload(payload), payload)
-}
-
-func (a *SimpleOneAdapter) GetTicket(externalID string) (*models.TicketCreated, error) {
-	if a == nil || a.webhook == nil {
-		return nil, fmt.Errorf("simpleone adapter is not configured")
+	body, err := json.Marshal(buildSimpleOnePayload(payload))
+	if err != nil {
+		return nil, fmt.Errorf("marshal simpleone payload: %w", err)
 	}
-	return a.webhook.GetTicket(externalID)
-}
 
-func (a *SimpleOneAdapter) UpdateTicket(externalID string, update map[string]interface{}) error {
-	if a == nil || a.webhook == nil {
-		return fmt.Errorf("simpleone adapter is not configured")
+	req, err := http.NewRequest(http.MethodPost, a.endpointURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create simpleone request: %w", err)
 	}
-	return a.webhook.UpdateTicket(externalID, update)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "ts-calls-automation/ticket-service")
+	if a.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+a.bearerToken)
+	}
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send simpleone request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read simpleone response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("simpleone response %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	return buildSimpleOneCreated(respBody, payload), nil
 }
 
 func buildSimpleOnePayload(payload *models.TicketSystemPayload) map[string]interface{} {
@@ -152,4 +170,36 @@ func simpleOneSourceFile(metadata map[string]interface{}) string {
 
 func collapseWhitespace(value string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+}
+
+func buildSimpleOneCreated(respBody []byte, payload *models.TicketSystemPayload) *models.TicketCreated {
+	created := &models.TicketCreated{
+		ExternalID: simpleOneAckID(payload),
+		System:     "simpleone",
+		CreatedAt:  time.Now().UTC(),
+	}
+	if strings.TrimSpace(string(respBody)) == "" {
+		return created
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(respBody, &decoded); err != nil {
+		return created
+	}
+
+	data, _ := decoded["data"].(map[string]interface{})
+	if id, ok := data["id"].(string); ok && strings.TrimSpace(id) != "" {
+		created.ExternalID = strings.TrimSpace(id)
+	}
+	if url, ok := data["record_url"].(string); ok && strings.TrimSpace(url) != "" {
+		created.URL = strings.TrimSpace(url)
+	}
+	return created
+}
+
+func simpleOneAckID(payload *models.TicketSystemPayload) string {
+	if payload != nil && payload.Service.CallID != "" {
+		return "simpleone-ack-" + payload.Service.CallID
+	}
+	return "simpleone-ack"
 }

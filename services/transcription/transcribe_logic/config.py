@@ -1,6 +1,12 @@
 # transcribe/config.py
 from __future__ import annotations
+
+import os
 from dataclasses import dataclass, field
+from functools import lru_cache
+from typing import Any, Dict
+
+AUTO_DEVICE = "auto"
 
 @dataclass
 class AudioCfg:
@@ -63,5 +69,54 @@ class Config:
     turns: TurnsCfg = field(default_factory=TurnsCfg)
     asr: ASRCfg = field(default_factory=ASRCfg)
     stereo: StereoCfg = field(default_factory=StereoCfg)
+
+
+def normalize_whisperx_device(device: str | None) -> str:
+    value = (device or "").strip().lower()
+    if not value:
+        return AUTO_DEVICE
+    if value == "gpu":
+        return "cuda"
+    return value
+
+
+@lru_cache(maxsize=1)
+def _cuda_is_available() -> bool:
+    try:
+        import torch
+    except Exception:
+        return False
+
+    try:
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+def resolve_whisperx_device(device: str | None = None) -> str:
+    device = normalize_whisperx_device(device)
+    if device != AUTO_DEVICE:
+        return device
+    return "cuda" if _cuda_is_available() else "cpu"
+
+
+def get_whisperx_device_from_env(name: str = "WHISPERX_DEVICE") -> str:
+    return resolve_whisperx_device(os.getenv(name, AUTO_DEVICE))
+
+
+def get_whisperx_settings() -> Dict[str, Any]:
+    vad_method = os.getenv("WHISPERX_VAD_METHOD", "silero").strip().lower()
+    if not vad_method:
+        vad_method = "silero"
+
+    return {
+        "model": os.getenv("WHISPERX_MODEL", "large-v3"),
+        "language": os.getenv("WHISPERX_LANGUAGE", "ru"),
+        "device": get_whisperx_device_from_env(),
+        "compute_type": os.getenv("WHISPERX_COMPUTE_TYPE", "int8"),
+        "batch_size": int(os.getenv("WHISPERX_BATCH_SIZE", "1")),
+        "vad_method": vad_method,
+    }
+
 
 CFG = Config()

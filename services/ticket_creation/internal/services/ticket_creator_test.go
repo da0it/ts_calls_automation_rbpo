@@ -109,12 +109,4 @@ func (failingTicketAdapter) CreateTicket(payload *models.TicketSystemPayload) (*
 	return nil, errors.New("stop after draft")
 }
 
-func (failingTicketAdapter) GetTicket(externalID string) (*models.TicketCreated, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (failingTicketAdapter) UpdateTicket(externalID string, update map[string]interface{}) error {
-	return errors.New("not implemented")
-}
-
 var _ adapters.TicketSystemAdapter = failingTicketAdapter{}

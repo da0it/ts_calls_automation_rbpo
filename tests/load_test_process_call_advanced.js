@@ -121,7 +121,6 @@ function buildTextSummary(data) {
   lines.push(`routing_sec p95: ${fmt(metricValue(data, 'stage_routing_sec', 'p(95)'), 3)}`);
   lines.push(`entity_extraction_sec p95: ${fmt(metricValue(data, 'stage_entity_extraction_sec', 'p(95)'), 3)}`);
   lines.push(`ticket_creation_sec p95: ${fmt(metricValue(data, 'stage_ticket_creation_sec', 'p(95)'), 3)}`);
-  lines.push(`notification_sec p95: ${fmt(metricValue(data, 'stage_notification_sec', 'p(95)'), 3)}`);
   lines.push(`http_5xx rate: ${fmt(metricValue(data, 'http_5xx_rate', 'rate'), 4)}`);
   lines.push(`payload_incomplete rate: ${fmt(metricValue(data, 'payload_incomplete_rate', 'rate'), 4)}`);
   lines.push(`result_completed count: ${fmt(metricValue(data, 'result_completed_count', 'count'), 0)}`);
@@ -142,7 +141,6 @@ const transcriptionStage = new Trend('stage_transcription_sec');
 const routingStage = new Trend('stage_routing_sec');
 const entityStage = new Trend('stage_entity_extraction_sec');
 const ticketStage = new Trend('stage_ticket_creation_sec');
-const notificationStage = new Trend('stage_notification_sec');
 const payloadIncompleteRate = new Rate('payload_incomplete_rate');
 const http5xxRate = new Rate('http_5xx_rate');
 const resultCompletedCount = new Counter('result_completed_count');
@@ -236,7 +234,6 @@ export default function (data) {
     const routing = safeNumber(processingTime.routing);
     const entityExtraction = safeNumber(processingTime.entity_extraction);
     const ticketCreation = safeNumber(processingTime.ticket_creation);
-    const notification = safeNumber(processingTime.notification);
     if (transcription !== null) {
       transcriptionStage.add(transcription, { status, audio_name: file.name });
     }
@@ -248,9 +245,6 @@ export default function (data) {
     }
     if (ticketCreation !== null) {
       ticketStage.add(ticketCreation, { status, audio_name: file.name });
-    }
-    if (notification !== null) {
-      notificationStage.add(notification, { status, audio_name: file.name });
     }
   }
 
