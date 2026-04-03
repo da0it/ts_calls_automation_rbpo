@@ -24,11 +24,11 @@ class CutCfg:
 
 @dataclass
 class SilenceCfg:
-    # silencedetect params
+    # Параметры для детектора тишины
     silence_db: float = -35.0
     silence_min_dur: float = 0.25
 
-    # splitting by silence
+    # Разделение речи на сегменты по найденной тишине
     split_max_len: float = 4.0
     split_pad: float = 0.05
     edge_guard_seconds: float = 0.3
@@ -42,19 +42,13 @@ class TurnsCfg:
     long_turn_max_len: float = 6
     long_turn_overlap: float = 0.2
 
-    # merge already-transcribed utterances in final timeline
+    # Склейка транскрибированной речи при малом времени между сегментами
     merge_utt_max_gap: float = 0.7
 
 @dataclass
 class ASRCfg:
-    # minimal duration to process
+    # Минимальная длительность аудиофайла (в минутах), для начала распознавания
     min_dur: float = 0.25
-
-    # ASR inner splitting by silences
-    silence_db: float = -35.0
-    silence_min_dur: float = 0.15
-    piece_max_len: float = 4
-    piece_pad: float = 0.05
 
 @dataclass
 class StereoCfg:

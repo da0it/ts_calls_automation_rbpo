@@ -28,17 +28,12 @@ SPEAKER_PREFIX_RE = re.compile(r"^\s*(speaker\s*\d+\s*:\s*)", re.IGNORECASE)
 
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_RE = re.compile(r"(\+?\d[\d\s\-\(\)]{8,}\d)")
-MONEY_RE = re.compile(
-    r"\b(\d{1,3}(?:[ \u00A0]?\d{3})*(?:[.,]\d{1,2})?)\s*"
-    r"(руб(лей|ля|\.|)|р\.|₽|usd|eur|дол(ларов|лара|л\.)|евро)\b",
-    re.IGNORECASE
-)
+
 NUM_RE = re.compile(r"\b\d+\b")
 
 WS_RE = re.compile(r"\s+")
 PUNCT_SPACES_RE = re.compile(r"\s+([,.!?;:])")
 MULTI_DOTS_RE = re.compile(r"\.{2,}")
-
 
 @dataclass
 class PreprocessConfig:
@@ -79,7 +74,6 @@ def normalize_text(text: str) -> str:
 
     t = EMAIL_RE.sub(" <email> ", t)
     t = PHONE_RE.sub(" <phone> ", t)
-    t = MONEY_RE.sub(" <money> ", t)
     t = NUM_RE.sub(" <num> ", t)
 
     t = MULTI_DOTS_RE.sub(".", t)

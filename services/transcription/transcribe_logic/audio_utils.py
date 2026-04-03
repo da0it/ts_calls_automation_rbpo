@@ -33,7 +33,7 @@ def _run(cmd: List[str]) -> None:
     if p.returncode != 0:
         raise RuntimeError("Command failed:\n" + " ".join(cmd) + "\n\n" + p.stderr)
 
-
+# Проверка количества аудиоканалов в файле
 def probe_channels(audio_path: str) -> int:
     cmd = [
         FFPROBE_BIN, "-v", "error",
@@ -50,7 +50,7 @@ def probe_channels(audio_path: str) -> int:
     except Exception:
         return 1
 
-
+# Приведение аудиофайла к формату 16kHz моно, формат wav
 def to_wav_16k_mono_preprocessed(src: str, dst: str) -> None:
     af = f"highpass=f={CFG.audio.highpass_hz},lowpass=f={CFG.audio.lowpass_hz}"
     _run([
@@ -76,7 +76,7 @@ def extract_channel_to_wav_16k(src: str, dst: str, channel_index: int) -> None:
 
 
 def cut_wav_segment(src_wav: str, dst_wav: str, start: float, end: float, pad: float | None = None) -> None:
-    pad = CFG.asr.piece_pad if pad is None else pad
+    pad = CFG.silence.split_pad if pad is None else pad
     s = max(0.0, start - pad)
     e = end + pad
     _run([
@@ -132,7 +132,7 @@ def detect_silences(
 
         return silences
 
-
+# Проверка, является ли стереоканал разделенным по звонящему и ответчику, методом сравнения RMS Loudness
 def is_fake_stereo(audio_path: str) -> bool:
     with tempfile.TemporaryDirectory() as td:
         left = os.path.join(td, "left.wav")
