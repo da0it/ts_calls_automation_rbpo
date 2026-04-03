@@ -135,6 +135,54 @@ class EvaluationScriptsTest(unittest.TestCase):
             self.assertAlmostEqual(report["comparison"]["time_reduction_pct"], 79.52381, places=5)
             self.assertAlmostEqual(report["comparison"]["operator_load_reduction_pct"], 44.0, places=6)
 
+    def test_evaluate_ab_test_supports_paired_manual_vs_system_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = Path(tmpdir) / "ab_paired.csv"
+            rows = [
+                {
+                    "final_intent_id": "billing",
+                    "ai_intent_id": "billing",
+                    "final_group_id": "support",
+                    "ai_group_id": "support",
+                    "final_priority": "high",
+                    "ai_priority": "high",
+                    "manual_time_sec": "20",
+                    "system_time_sec": "4.0",
+                    "manual_operator_load_pct": "100",
+                    "system_operator_load_pct": "0",
+                },
+                {
+                    "final_intent_id": "delivery",
+                    "ai_intent_id": "billing",
+                    "final_group_id": "support",
+                    "ai_group_id": "support",
+                    "final_priority": "medium",
+                    "ai_priority": "low",
+                    "manual_time_sec": "18",
+                    "system_time_sec": "4.8",
+                    "manual_operator_load_pct": "100",
+                    "system_operator_load_pct": "0",
+                },
+            ]
+            with csv_path.open("w", encoding="utf-8", newline="") as file:
+                writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
+                writer.writeheader()
+                writer.writerows(rows)
+
+            result = self._run_script("evaluate_ab_test.py", "--mode", "paired", "--csv", str(csv_path))
+            self.assertIn("mode=paired", result.stdout)
+            self.assertIn("Agreement: Intent", result.stdout)
+
+            report = json.loads((Path(tmpdir) / "ab_test_metrics.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["mode"], "paired")
+            self.assertAlmostEqual(report["groups"]["manual"]["avg_time_sec"], 19.0, places=6)
+            self.assertAlmostEqual(report["groups"]["system"]["avg_time_sec"], 4.4, places=6)
+            self.assertAlmostEqual(report["comparison"]["time_reduction_pct"], 76.842105, places=6)
+            self.assertAlmostEqual(report["comparison"]["operator_load_reduction_pct"], 100.0, places=6)
+            self.assertAlmostEqual(report["agreement"]["intent"]["accuracy"], 0.5, places=6)
+            self.assertAlmostEqual(report["agreement"]["group"]["accuracy"], 1.0, places=6)
+            self.assertAlmostEqual(report["agreement"]["priority"]["accuracy"], 0.5, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()

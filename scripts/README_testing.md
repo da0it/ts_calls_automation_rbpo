@@ -23,6 +23,55 @@ python3 scripts/evaluate_calls_folder.py \
 
 This produces `results.csv`, `results.jsonl`, `summary.json` and can be used as a functional smoke check for the full pipeline.
 
+- Simple functional checks through the HTTP API:
+
+```bash
+python3 scripts/run_functional_tests.py \
+  --base-url http://localhost:8000 \
+  --admin-username admin \
+  --admin-password 'YOUR_PASSWORD' \
+  --audio /absolute/path/to/sample.wav
+```
+
+For fuller coverage of requirement `2.3.2.1.1`, pass multiple files, for example one `wav`, one `mp3`, one `ogg`:
+
+```bash
+python3 scripts/run_functional_tests.py \
+  --base-url http://localhost:8000 \
+  --admin-username admin \
+  --admin-password 'YOUR_PASSWORD' \
+  --audio /absolute/path/to/sample.wav \
+  --audio /absolute/path/to/sample.mp3 \
+  --audio /absolute/path/to/sample.ogg
+```
+
+Optional role-model check:
+
+```bash
+python3 scripts/run_functional_tests.py \
+  --base-url http://localhost:8000 \
+  --admin-username admin \
+  --admin-password 'YOUR_PASSWORD' \
+  --operator-username operator1 \
+  --operator-password 'OPERATOR_PASSWORD' \
+  --audio /absolute/path/to/sample.wav
+```
+
+What the script checks:
+
+- login
+- request without token
+- request without audio
+- unsupported file format
+- successful processing of valid audio
+- ticket, notification and audit log
+- role separation for `admin` and `operator`
+
+Reports:
+
+- `functional_test_report.json`
+- `functional_test_report.md`
+
 If you already have a labeled CSV with file paths, intents and spam labels, you can pass it into the batch evaluation:
 
 ```bash
@@ -90,6 +139,8 @@ The script computes:
 
 ## 4. A/B testing
 
+### 4.1 Aggregated long-format A/B CSV
+
 Prepare a CSV with at least these columns:
 
 - `group` (`A` or `B`)
@@ -105,6 +156,51 @@ python3 scripts/evaluate_ab_test.py \
 ```
 
 The report contains per-group averages plus reductions between control (`A`) and treatment (`B`) for time, error rate and operator load.
+
+### 4.2 Paired comparison: subsystem vs manual classification
+
+If you already have a labeling CSV with manual labels and AI hints, you can compare the subsystem directly with manual classification in `paired` mode.
+
+This works especially well with the secure labeling dataset produced by:
+
+```bash
+python3 scripts/batch_prepare_labeling.py \
+  --base-url http://localhost:8000 \
+  --username admin \
+  --password 'YOUR_PASSWORD' \
+  --input-dir /absolute/path/to/audio \
+  --pseudonym-salt 'CHANGE_ME_LONG_RANDOM_SECRET' \
+  --include-ai-hints
+```
+
+After operators fill `final_intent_id`, `final_group_id`, `final_priority`, run:
+
+```bash
+python3 scripts/evaluate_ab_test.py \
+  --mode paired \
+  --csv /absolute/path/to/secure_labeling_dataset.csv
+```
+
+Paired mode reads:
+
+- manual labels from `final_intent_id`, `final_group_id`, `final_priority`
+- subsystem predictions from `ai_intent_id`, `ai_group_id`, `ai_priority`
+- time metrics from `manual_time_sec` and `system_time_sec` if you add them
+- operator-load metrics from `manual_operator_load_pct` and `system_operator_load_pct` if you add them
+
+The report contains:
+
+- agreement with manual classification for `intent`, `group`, `priority`
+- average time for manual classification vs subsystem
+- operator-load reduction
+- optional reference-quality metrics if you provide separate `reference_*` columns
+
+Simple interpretation for the thesis:
+
+- control group: manual operator classification
+- treatment group: subsystem classification
+- main quality indicator without third-party gold labels: agreement with manual classification
+- main efficiency indicators: average classification time and operator load
 
 ## 5. Load testing
 
