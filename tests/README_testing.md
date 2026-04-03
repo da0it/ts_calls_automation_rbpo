@@ -2,14 +2,19 @@
 
 This folder now contains reproducible scripts for the diploma chapter on testing and efficiency evaluation.
 
-## 1. Functional and end-to-end checks
+## 1. Functional, integration and end-to-end checks
 
-- Existing Go unit tests:
+- Existing Go tests:
 
 ```bash
 cd services/orchestrator && go test ./...
 cd services/ticket_creation && go test ./...
 ```
+
+For the orchestrator, `go test ./...` now also includes simple integration tests of the service chain:
+
+- transcription -> routing -> entity extraction -> ticket creation -> notification
+- stop of the pipeline when low-confidence routing requires manual review
 
 - Batch end-to-end processing through the HTTP orchestrator API:
 
