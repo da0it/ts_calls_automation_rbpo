@@ -20,7 +20,6 @@ segments = [
         start=s["start"],
         end=s["end"],
         speaker=s.get("speaker"),
-        role=s.get("role"),
         text=s["text"],
     )
     for s in raw["segments"]
@@ -32,7 +31,6 @@ call = CallInput(
     segments=segments,
     meta={
         "mode": raw.get("mode"),
-        "role_mapping": raw.get("role_mapping"),
         "note": raw.get("note"),
     },
 )

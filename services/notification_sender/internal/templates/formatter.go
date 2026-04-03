@@ -143,11 +143,11 @@ func buildCallSummary(transcript *callprocessingv1.Transcript) string {
 	var sb strings.Builder
 	totalLen := 0
 	for _, seg := range transcript.GetSegments() {
-		role := seg.GetRole()
-		if role == "" {
-			role = seg.GetSpeaker()
+		speaker := seg.GetSpeaker()
+		if speaker == "" {
+			speaker = "speaker"
 		}
-		line := fmt.Sprintf("[%s]: %s", role, seg.GetText())
+		line := fmt.Sprintf("[%s]: %s", speaker, seg.GetText())
 		if totalLen+len(line) > 500 {
 			sb.WriteString("\n...")
 			break

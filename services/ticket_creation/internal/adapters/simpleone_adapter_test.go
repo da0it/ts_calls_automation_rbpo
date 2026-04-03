@@ -48,7 +48,7 @@ func TestSimpleOneAdapterCreateTicketSendsPayloadAndBearer(t *testing.T) {
 	if gotAuth != "Bearer secret-token" {
 		t.Fatalf("unexpected auth header: %q", gotAuth)
 	}
-	if gotPayload["title"] != "Обращение: portal_access" {
+	if gotPayload["title"] != "Обращение: misc.triage" {
 		t.Fatalf("unexpected title in payload: %#v", gotPayload["title"])
 	}
 	if gotPayload["problem_summary"] != "Проблема: Клиент не может войти в личный кабинет." {
@@ -111,7 +111,7 @@ func sampleTicketPayload() *models.TicketSystemPayload {
 			SchemaVersion: "v1",
 			SentAt:        time.Unix(1712345678, 0).UTC(),
 			CallID:        "call-123",
-			IntentID:      "portal_access",
+			IntentID:      "misc.triage",
 			Priority:      "high",
 		},
 		Request: models.CreateTicketRequest{
@@ -125,10 +125,10 @@ func sampleTicketPayload() *models.TicketSystemPayload {
 				},
 			},
 			Routing: models.RoutingData{
-				IntentID:         "portal_access",
+				IntentID:         "misc.triage",
 				IntentConfidence: 0.97,
 				Priority:         "high",
-				SuggestedGroup:   "tech_support",
+				SuggestedGroup:   "technical_support",
 			},
 			Entities: &models.Entities{
 				Phones: []models.ExtractedEntity{{Value: "+79991234567"}},
@@ -139,15 +139,15 @@ func sampleTicketPayload() *models.TicketSystemPayload {
 			Description: "Проблема: Клиент не может войти в личный кабинет.",
 		},
 		Draft: &models.TicketDraft{
-			Title:        "Обращение: portal_access",
+			Title:        "Обращение: misc.triage",
 			Description:  "Проблема: Клиент не может войти в личный кабинет.",
 			Priority:     "high",
 			AssigneeType: "group",
-			AssigneeID:   "tech_support",
-			Tags:         []string{"portal_access", "urgent"},
+			AssigneeID:   "technical_support",
+			Tags:         []string{"misc.triage", "urgent"},
 			CallID:       "call-123",
 			AudioURL:     "https://storage.example/call.wav",
-			IntentID:     "portal_access",
+			IntentID:     "misc.triage",
 		},
 	}
 }

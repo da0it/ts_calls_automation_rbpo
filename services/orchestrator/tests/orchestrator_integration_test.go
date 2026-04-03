@@ -208,9 +208,7 @@ func buildServiceForTest(
 }
 
 func TestProcessCallIntegrationFullPipeline(t *testing.T) {
-	transcriptMeta, err := structpb.NewStruct(map[string]interface{}{
-		"agent": "operator-1",
-	})
+	transcriptMeta, err := structpb.NewStruct(map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("build metadata: %v", err)
 	}
@@ -220,17 +218,16 @@ func TestProcessCallIntegrationFullPipeline(t *testing.T) {
 		&callprocessingv1.Transcript{
 			CallId: "call-001",
 			Segments: []*callprocessingv1.Segment{
-				{Start: 0, End: 2, Speaker: "spk_0", Role: "agent", Text: "Здравствуйте, чем могу помочь?"},
-				{Start: 2, End: 5, Speaker: "spk_1", Role: "caller", Text: "У меня проблема с заказом 12345."},
+				{Start: 0, End: 2, Speaker: "spk_0", Text: "Здравствуйте, чем могу помочь?"},
+				{Start: 2, End: 5, Speaker: "spk_1", Text: "У меня проблема с заказом 12345."},
 			},
-			RoleMapping: map[string]string{"spk_0": "agent", "spk_1": "caller"},
-			Metadata:    transcriptMeta,
+			Metadata: transcriptMeta,
 		},
 		&callprocessingv1.Routing{
 			IntentId:         "orders.problem",
 			IntentConfidence: 0.91,
 			Priority:         "high",
-			SuggestedGroup:   "support",
+			SuggestedGroup:   "technical_support",
 			SpamCheck: &callprocessingv1.SpamCheck{
 				Status:         "allow",
 				PredictedLabel: "not_spam",
@@ -295,15 +292,14 @@ func TestProcessCallIntegrationStopsOnLowConfidenceRouting(t *testing.T) {
 		&callprocessingv1.Transcript{
 			CallId: "call-002",
 			Segments: []*callprocessingv1.Segment{
-				{Start: 0, End: 1, Speaker: "spk_0", Role: "caller", Text: "Мне нужна помощь"},
+				{Start: 0, End: 1, Speaker: "spk_0", Text: "Мне нужна помощь"},
 			},
-			RoleMapping: map[string]string{"spk_0": "caller"},
 		},
 		&callprocessingv1.Routing{
 			IntentId:         "misc.triage",
 			IntentConfidence: 0.22,
 			Priority:         "medium",
-			SuggestedGroup:   "triage",
+			SuggestedGroup:   "helpdesk_triage",
 			SpamCheck: &callprocessingv1.SpamCheck{
 				Status:         "allow",
 				PredictedLabel: "not_spam",

@@ -21,7 +21,6 @@ from pii_redactor import redact_segments
 
 
 ALLOWED_DEFAULT_EXTS = [".mp3", ".wav", ".m4a", ".flac", ".ogg"]
-CALLER_ROLE_HINTS = {"звонящий", "caller", "customer", "client"}
 LOW_INFO_EXACT = {
     "да",
     "нет",
@@ -163,9 +162,6 @@ def _segment_score(seg: Dict[str, object]) -> float:
     if not text:
         return -10.0
     score = 0.0
-    role = str(seg.get("role") or "").strip().lower()
-    if any(hint in role for hint in CALLER_ROLE_HINTS):
-        score += 1.2
     words = [w for w in text.split(" ") if w]
     score += min(1.2, len(words) / 16.0)
     if _is_greeting(text):
@@ -220,14 +216,6 @@ def _build_training_sample(
     if mode == "full":
         return _truncate_safely(_join_segments_text(clean_segments), max_chars)
 
-    if mode == "caller_only":
-        caller = [
-            s for s in clean_segments
-            if any(h in str(s.get("role") or "").strip().lower() for h in CALLER_ROLE_HINTS)
-        ]
-        base = _join_segments_text(caller or clean_segments)
-        return _truncate_safely(base, max_chars)
-
     scored: List[Tuple[float, int, Dict[str, object]]] = []
     for i, seg in enumerate(clean_segments):
         score = _segment_score(seg)
@@ -237,18 +225,8 @@ def _build_training_sample(
     if not scored:
         return _truncate_safely(_join_segments_text(clean_segments), max_chars)
 
-    anchor_idx: int | None = None
-    for i, seg in enumerate(clean_segments):
-        role = str(seg.get("role") or "").strip().lower()
-        text = _normalize_text(str(seg.get("text") or ""))
-        if text and any(h in role for h in CALLER_ROLE_HINTS) and not _is_low_information(text):
-            anchor_idx = i
-            break
-
     top = sorted(scored, key=lambda x: (x[0], -x[1]), reverse=True)[: max(1, max_segments)]
     chosen_indices = {idx for _, idx, _ in top}
-    if anchor_idx is not None:
-        chosen_indices.add(anchor_idx)
     ordered = [clean_segments[i] for i in sorted(chosen_indices)]
     ordered = ordered[: max(1, max_segments)]
     return _truncate_safely(_join_segments_text(ordered), max_chars)
@@ -271,7 +249,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pseudonym-salt", default="", help="Salt for stable pseudonyms (or set DATASET_PSEUDONYM_SALT).")
     parser.add_argument("--keep-source-filenames", action="store_true", help="Keep relative source file names in CSV.")
     parser.add_argument("--include-ai-hints", action="store_true", help="Add ai_* predicted columns to CSV.")
-    parser.add_argument("--training-sample-mode", choices=["smart", "full", "caller_only"], default="smart")
+    parser.add_argument("--training-sample-mode", choices=["smart", "full"], default="smart")
     parser.add_argument("--max-training-sample-chars", type=int, default=320)
     parser.add_argument("--max-training-sample-segments", type=int, default=7)
     parser.add_argument("--stop-on-error", action="store_true", help="Stop on first failed file.")
@@ -392,7 +370,6 @@ def main() -> int:
                 },
                 "transcript": {
                     "segments": redacted_segments,
-                    "role_mapping": transcript.get("role_mapping") if isinstance(transcript.get("role_mapping"), dict) else {},
                 },
                 "redaction_report": report,
             }

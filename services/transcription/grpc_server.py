@@ -118,20 +118,6 @@ class TranscriptionServicer(pb2_grpc.TranscriptionServiceServicer):
         except Exception as exc:
             logger.warning("WhisperX preload failed, continuing without warmup: %s", exc)
     
-    def _convert_to_proto_segments(self, segments: list) -> list:
-        """Конвертирует сегменты в protobuf формат"""
-        proto_segments = []
-        for seg in segments:
-            proto_seg = pb2.Segment(
-                start=float(seg.get("start", 0)),
-                end=float(seg.get("end", 0)),
-                speaker=seg.get("speaker", ""),
-                role=seg.get("role", ""),
-                text=seg.get("text", "")
-            )
-            proto_segments.append(proto_seg)
-        return proto_segments
-    
     def Transcribe(self, request, context):
         """
         Обрабатывает запрос на транскрибацию
@@ -173,13 +159,7 @@ class TranscriptionServicer(pb2_grpc.TranscriptionServiceServicer):
                 proto_seg.start = float(seg.get("start", 0))
                 proto_seg.end = float(seg.get("end", 0))
                 proto_seg.speaker = seg.get("speaker", "")
-                proto_seg.role = seg.get("role", "")
                 proto_seg.text = seg.get("text", "")
-            
-            # Добавляем role_mapping
-            role_mapping = result.get("role_mapping", {})
-            for key, value in role_mapping.items():
-                transcript.role_mapping[key] = value
             
             # Добавляем метаданные
             metadata = {

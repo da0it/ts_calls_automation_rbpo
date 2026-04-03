@@ -242,11 +242,11 @@ func validateLocalOllamaBaseURL(raw string) error {
 func formatTranscript(segments []models.Segment) string {
 	var sb strings.Builder
 	for _, seg := range segments {
-		role := seg.Role
-		if role == "" {
-			role = seg.Speaker
+		speaker := seg.Speaker
+		if speaker == "" {
+			speaker = "speaker"
 		}
-		sb.WriteString(fmt.Sprintf("[%s]: %s\n", role, seg.Text))
+		sb.WriteString(fmt.Sprintf("[%s]: %s\n", speaker, seg.Text))
 	}
 	return sb.String()
 }

@@ -51,7 +51,7 @@ def _attach_basic_diarization(segments: List[Dict[str, Any]]) -> List[Dict[str, 
     for segment in segments:
         normalized_speaker = _normalize_speaker_label(segment.get("speaker"))
         segment["speaker"] = normalized_speaker or ""
-        segment["role"] = ""
+        segment.pop("role", None)
     return segments
 
 
@@ -94,7 +94,6 @@ def transcribe_with_roles(
                 "mode": mode,
                 "input": os.path.basename(audio_path),
                 "segments": [],
-                "role_mapping": {},
                 "note": "Backend returned no segments.",
             }
 
@@ -110,6 +109,5 @@ def transcribe_with_roles(
             "mode": mode,
             "input": os.path.basename(audio_path),
             "segments": segments,
-            "role_mapping": {},
             "note": note,
         }

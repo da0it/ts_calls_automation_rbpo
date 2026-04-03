@@ -52,8 +52,6 @@ class PreprocessConfig:
 
     max_chars: int = 4000
     keep_timestamps: bool = True
-    prefer_role: str = "звонящий"
-    min_client_segments: int = 6
 
     do_tokenize: bool = True
     do_lemmatize: bool = True
@@ -260,15 +258,11 @@ def build_canonical(
 ) -> PreprocessResult:
     cfg = cfg or PreprocessConfig()
 
-    selected = [(st, tx, rl) for (st, tx, rl) in segments if (rl is None or rl == cfg.prefer_role)]
-    if len(selected) < cfg.min_client_segments:
-        selected = segments
-
     lines: List[str] = []
     raw_kept = 0
     raw_dropped = 0
 
-    for start, raw, _role in selected:
+    for start, raw, _role in segments:
         if not raw:
             raw_dropped += 1
             continue

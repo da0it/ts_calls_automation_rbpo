@@ -16,8 +16,8 @@ import (
 func TestBuildTicketTitleUsesIntent(t *testing.T) {
 	t.Parallel()
 
-	title := buildTicketTitle("portal_access")
-	if title != "Обращение: portal_access" {
+	title := buildTicketTitle("misc.triage")
+	if title != "Обращение: misc.triage" {
 		t.Fatalf("unexpected title: %q", title)
 	}
 }
@@ -74,7 +74,7 @@ func TestCreateTicketSkipsPythonNERWhenEntitiesAlreadyProvided(t *testing.T) {
 			Segments: []models.Segment{{Role: "client", Text: "Не могу войти в портал."}},
 		},
 		Routing: models.RoutingData{
-			IntentID:       "portal_access",
+			IntentID:       "misc.triage",
 			Priority:       "high",
 			SuggestedGroup: "technical_support",
 		},

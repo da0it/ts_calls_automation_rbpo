@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     priority        VARCHAR(32)  NOT NULL DEFAULT 'medium',
     status          VARCHAR(32)  NOT NULL DEFAULT 'open',
     assignee_type   VARCHAR(32)  NOT NULL DEFAULT 'group',
-    assignee_id     VARCHAR(128) NOT NULL DEFAULT 'default_support',
+    assignee_id     VARCHAR(128) NOT NULL DEFAULT 'technical_support',
     intent_id       VARCHAR(128),
     intent_confidence DOUBLE PRECISION,
     entities_json   JSONB        NOT NULL DEFAULT '{}',

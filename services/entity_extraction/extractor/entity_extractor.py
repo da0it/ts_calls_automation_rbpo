@@ -54,60 +54,41 @@ class EntityExtractor:
         Извлекает сущности из сегментов диалога
 
         Args:
-            segments: Список сегментов с полями start, end, speaker, role, text
+            segments: Список сегментов с полями start, end, speaker, text
 
         Returns:
             Entities с извлеченными данными
         """
-        # Собираем текст от клиента + полный текст диалога
-        caller_text = []
-        all_text = []
-        caller_contexts = []  # Для сохранения контекста каждого сегмента
-
-        for seg in segments:
-            all_text.append(seg.text)
-            if seg.role == "звонящий":
-                text = seg.text
-                caller_text.append(text)
-                caller_contexts.append({
-                    "text": text,
-                    "start": seg.start,
-                    "end": seg.end
-                })
-        
-        full_text = " ".join(caller_text)
-        full_text_all = " ".join(all_text)
-        # Если роли были определены плохо и caller пуст, не теряем сущности.
-        source_text = full_text if full_text.strip() else full_text_all
+        full_text = " ".join(seg.text for seg in segments if seg.text)
 
         entities = Entities()
 
         # 1. Извлекаем персоны и организации через DeepPavlov NER
         if self.ner_model:
-            ner_entities = self._extract_ner_entities(source_text, caller_contexts)
+            ner_entities = self._extract_ner_entities(full_text)
             entities.persons = ner_entities.get("persons", [])
             # Можно добавить organizations если нужно
         else:
             # Fallback: простое извлечение имен через regex
-            entities.persons = self._extract_persons_regex(source_text)
+            entities.persons = self._extract_persons_regex(full_text)
         
         # 2. Извлекаем телефоны (regex)
-        entities.phones = self._extract_phones(full_text_all)
+        entities.phones = self._extract_phones(full_text)
         
         # 3. Извлекаем emails (regex)
-        entities.emails = self._extract_emails(full_text_all)
+        entities.emails = self._extract_emails(full_text)
         
         # 4. Извлекаем номера заказов (regex + эвристики)
-        entities.order_ids = self._extract_order_ids(full_text_all)
+        entities.order_ids = self._extract_order_ids(full_text)
         
         # 5. Извлекаем ID аккаунтов
-        entities.account_ids = self._extract_account_ids(full_text_all)
+        entities.account_ids = self._extract_account_ids(full_text)
         
         # 6. Извлекаем суммы денег
-        entities.money_amounts = self._extract_money(full_text_all)
+        entities.money_amounts = self._extract_money(full_text)
         
         # 7. Извлекаем даты
-        entities.dates = self._extract_dates(full_text_all)
+        entities.dates = self._extract_dates(full_text)
 
         logger.info(
             "Extracted entities in mode=%s: %d persons, %d phones, %d emails, %d money amounts",
@@ -123,7 +104,6 @@ class EntityExtractor:
     def _extract_ner_entities(
         self,
         text: str,
-        contexts: List[Dict]
     ) -> Dict[str, List[ExtractedEntity]]:
         """
         Извлечение сущностей через DeepPavlov NER
