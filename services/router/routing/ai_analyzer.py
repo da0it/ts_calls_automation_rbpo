@@ -53,7 +53,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         finetuned_batch_size: int = 16,
         finetuned_max_length: int = 256,
         finetuned_weight_decay: float = 0.01,
-        nlp_backend: str = "natasha",
+        nlp_backend: str = "stanza",
         nlp_text_mode: str = "canonical",
         nlp_stanza_resources_dir: str = "",
         spam_gate_enabled: bool = False,
@@ -72,7 +72,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         self.max_text_chars = int(max(200, min(20000, max_text_chars)))
 
         self.preprocess_cfg = preprocess_cfg or PreprocessConfig(
-            backend=str(nlp_backend or "natasha").strip().lower() or "natasha",
+            backend=str(nlp_backend or "stanza").strip().lower() or "stanza",
             model_text_mode=str(nlp_text_mode or "canonical").strip().lower() or "canonical",
             drop_fillers=True,
             dedupe=True,

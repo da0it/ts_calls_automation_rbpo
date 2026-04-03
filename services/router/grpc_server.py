@@ -262,7 +262,7 @@ def serve() -> None:
     finetuned_batch_size = int(os.getenv("ROUTER_FINETUNED_BATCH_SIZE", "16"))
     finetuned_max_length = int(os.getenv("ROUTER_FINETUNED_MAX_LENGTH", "256"))
     finetuned_weight_decay = float(os.getenv("ROUTER_FINETUNED_WEIGHT_DECAY", "0.01"))
-    nlp_backend = os.getenv("ROUTER_NLP_BACKEND", "natasha").strip().lower() or "natasha"
+    nlp_backend = os.getenv("ROUTER_NLP_BACKEND", "stanza").strip().lower() or "stanza"
     nlp_text_mode = os.getenv("ROUTER_NLP_TEXT_MODE", "canonical").strip().lower() or "canonical"
     nlp_stanza_resources_dir = os.getenv("ROUTER_NLP_STANZA_DIR", "").strip()
     spam_gate_enabled = os.getenv("ROUTER_SPAM_GATE_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}

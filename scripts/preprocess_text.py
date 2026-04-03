@@ -119,7 +119,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--text-col", default="text", help="Text column in CSV mode.")
     parser.add_argument("--output-csv", default="", help="Output CSV path. Default: <input>_preprocessed.csv")
 
-    parser.add_argument("--backend", default="stanza", choices=["stanza", "natasha", "none"])
+    parser.add_argument("--backend", default="stanza", choices=["stanza", "none"])
     parser.add_argument("--model-text-mode", default="tokens", choices=["canonical", "normalized", "plain", "tokens", "lemmas"])
     parser.add_argument("--do-lemmatize", action="store_true", help="Enable lemmatization.")
     parser.add_argument("--keep-stopwords", action="store_true", help="Keep stop words in output text.")

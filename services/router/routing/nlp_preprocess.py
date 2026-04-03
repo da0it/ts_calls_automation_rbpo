@@ -42,7 +42,7 @@ MULTI_DOTS_RE = re.compile(r"\.{2,}")
 
 @dataclass
 class PreprocessConfig:
-    backend: str = "natasha"
+    backend: str = "stanza"
     model_text_mode: str = "canonical"
     drop_fillers: bool = True
     drop_stopwords: bool = False
@@ -138,7 +138,7 @@ def tokenize_ru(norm_text: str, keep_special_tokens: bool = True) -> List[str]:
 def lemmatize(norm_text: str, keep_special_tokens: bool = True) -> Tuple[List[str], List[str]]:
     tokens, lemmas, _backend = lemmatize_with_backend(
         norm_text,
-        backend="natasha",
+        backend="stanza",
         keep_special_tokens=keep_special_tokens,
         stanza_resources_dir="",
     )
@@ -152,26 +152,18 @@ def lemmatize_with_backend(
     keep_special_tokens: bool,
     stanza_resources_dir: str,
 ) -> Tuple[List[str], List[str], str]:
-    backend_norm = str(backend or "natasha").strip().lower()
+    backend_norm = str(backend or "stanza").strip().lower()
     if backend_norm == "none":
         tokens = tokenize_ru(norm_text, keep_special_tokens=keep_special_tokens)
         return tokens, tokens[:], "none"
-    if backend_norm == "stanza":
-        tokens, lemmas = _lemmatize_stanza(
-            norm_text,
-            keep_special_tokens=keep_special_tokens,
-            stanza_resources_dir=stanza_resources_dir,
-        )
-        if tokens:
-            return tokens, lemmas, "stanza"
-        logger.warning("Stanza lemmatization unavailable, falling back to token text")
-        fallback = tokenize_ru(norm_text, keep_special_tokens=keep_special_tokens)
-        return fallback, fallback[:], "none"
-
-    tokens, lemmas = _lemmatize_natasha(norm_text, keep_special_tokens=keep_special_tokens)
+    tokens, lemmas = _lemmatize_stanza(
+        norm_text,
+        keep_special_tokens=keep_special_tokens,
+        stanza_resources_dir=stanza_resources_dir,
+    )
     if tokens:
-        return tokens, lemmas, "natasha"
-    logger.warning("Natasha lemmatization unavailable, falling back to token text")
+        return tokens, lemmas, "stanza"
+    logger.warning("Stanza lemmatization unavailable, falling back to token text")
     fallback = tokenize_ru(norm_text, keep_special_tokens=keep_special_tokens)
     return fallback, fallback[:], "none"
 
