@@ -4,42 +4,46 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
 
 
-EMPTY_MARK = "__empty__"
+EMPTY = "__empty__"
 
 
-def _norm(value: object) -> str:
+def read_csv(path):
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        reader = csv.DictReader(file)
+        rows = [dict(row) for row in reader]
+    return rows
+
+
+def clean(value):
     raw = str(value or "").strip()
     if raw.lower() in {"", "none", "null", "nan", "-"}:
         return ""
     return raw
 
 
-def _read_csv(path: Path) -> Tuple[List[Dict[str, str]], List[str]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        rows = [dict(r) for r in reader]
-        headers = list(reader.fieldnames or [])
-    return rows, headers
+def build_report(rows, true_col, pred_col):
+    y_true = []
+    y_pred = []
+    skipped = 0
 
+    for row in rows:
+        true_value = clean(row.get(true_col))
+        if not true_value:
+            skipped += 1
+            continue
+        pred_value = clean(row.get(pred_col)) or EMPTY
+        y_true.append(true_value)
+        y_pred.append(pred_value)
 
-def _pick_column(headers: Sequence[str], preferred: str, fallbacks: Iterable[str]) -> str:
-    if preferred and preferred in headers:
-        return preferred
-    for name in fallbacks:
-        if name in headers:
-            return name
-    return ""
-
-
-def _task_metrics(y_true: List[str], y_pred: List[str]) -> Dict[str, object]:
-    n = len(y_true)
-    if n == 0:
+    if not y_true:
         return {
+            "true_col": true_col,
+            "pred_col": pred_col,
+            "skipped_unlabeled": skipped,
             "samples": 0,
             "accuracy": 0.0,
             "macro_precision": 0.0,
@@ -51,29 +55,29 @@ def _task_metrics(y_true: List[str], y_pred: List[str]) -> Dict[str, object]:
         }
 
     labels = sorted(set(y_true) | set(y_pred))
-    cm: Dict[str, Counter] = {label: Counter() for label in labels}
-    for yt, yp in zip(y_true, y_pred):
-        cm[yt][yp] += 1
+    matrix = {label: Counter() for label in labels}
+    for true_value, pred_value in zip(y_true, y_pred):
+        matrix[true_value][pred_value] += 1
 
-    correct = sum(1 for yt, yp in zip(y_true, y_pred) if yt == yp)
-
-    per_label: Dict[str, Dict[str, float]] = {}
-    precisions: List[float] = []
-    recalls: List[float] = []
-    f1s: List[float] = []
-    weighted_f1_sum = 0.0
+    correct = sum(1 for true_value, pred_value in zip(y_true, y_pred) if true_value == pred_value)
+    precisions = []
+    recalls = []
+    f1s = []
+    weighted_sum = 0.0
     total_support = 0
+    labels_report = {}
 
     for label in labels:
-        tp = float(cm[label][label])
-        fp = float(sum(cm[t][label] for t in labels if t != label))
-        fn = float(sum(cm[label][p] for p in labels if p != label))
-        support = int(sum(cm[label].values()))
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = 2.0 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        tp = float(matrix[label][label])
+        fp = float(sum(matrix[x][label] for x in labels if x != label))
+        fn = float(sum(matrix[label][x] for x in labels if x != label))
+        support = int(sum(matrix[label].values()))
 
-        per_label[label] = {
+        precision = tp / (tp + fp) if tp + fp > 0 else 0.0
+        recall = tp / (tp + fn) if tp + fn > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
+
+        labels_report[label] = {
             "support": support,
             "precision": round(precision, 6),
             "recall": round(recall, 6),
@@ -82,123 +86,92 @@ def _task_metrics(y_true: List[str], y_pred: List[str]) -> Dict[str, object]:
         precisions.append(precision)
         recalls.append(recall)
         f1s.append(f1)
-        weighted_f1_sum += f1 * support
+        weighted_sum += f1 * support
         total_support += support
 
-    confusion = {
-        true_label: dict(sorted(preds.items(), key=lambda kv: kv[1], reverse=True))
-        for true_label, preds in cm.items()
-        if sum(preds.values()) > 0
-    }
+    confusion = {}
+    for true_label, row in matrix.items():
+        if sum(row.values()) > 0:
+            confusion[true_label] = dict(sorted(row.items(), key=lambda item: item[1], reverse=True))
 
     return {
-        "samples": n,
-        "accuracy": round(correct / n, 6),
+        "true_col": true_col,
+        "pred_col": pred_col,
+        "skipped_unlabeled": skipped,
+        "samples": len(y_true),
+        "accuracy": round(correct / len(y_true), 6),
         "macro_precision": round(sum(precisions) / len(precisions), 6),
         "macro_recall": round(sum(recalls) / len(recalls), 6),
         "macro_f1": round(sum(f1s) / len(f1s), 6),
-        "weighted_f1": round(weighted_f1_sum / max(1, total_support), 6),
-        "labels": per_label,
+        "weighted_f1": round(weighted_sum / max(1, total_support), 6),
+        "labels": labels_report,
         "confusion": confusion,
     }
 
 
-def _build_pairs(rows: Sequence[Dict[str, str]], true_col: str, pred_col: str) -> Tuple[List[str], List[str], int]:
-    true_vals: List[str] = []
-    pred_vals: List[str] = []
-    skipped = 0
-    for row in rows:
-        yt = _norm(row.get(true_col, ""))
-        if not yt:
-            skipped += 1
-            continue
-        yp = _norm(row.get(pred_col, ""))
-        if not yp:
-            yp = EMPTY_MARK
-        true_vals.append(yt)
-        pred_vals.append(yp)
-    return true_vals, pred_vals, skipped
-
-
-def _print_task(task_name: str, metrics: Dict[str, object], skipped: int, true_col: str, pred_col: str) -> None:
-    print(f"\n== {task_name} ==")
-    print(f"columns: true='{true_col}', pred='{pred_col}'")
-    print(f"samples={metrics['samples']}, skipped_unlabeled={skipped}")
+def print_report(title, report):
+    print(f"\n== {title} ==")
+    print(f"columns: true='{report['true_col']}', pred='{report['pred_col']}'")
+    print(f"samples={report['samples']}, skipped_unlabeled={report['skipped_unlabeled']}")
     print(
         "accuracy={acc:.4f}, macro_p={p:.4f}, macro_r={r:.4f}, macro_f1={f1:.4f}, weighted_f1={wf1:.4f}".format(
-            acc=float(metrics["accuracy"]),
-            p=float(metrics["macro_precision"]),
-            r=float(metrics["macro_recall"]),
-            f1=float(metrics["macro_f1"]),
-            wf1=float(metrics["weighted_f1"]),
+            acc=float(report["accuracy"]),
+            p=float(report["macro_precision"]),
+            r=float(report["macro_recall"]),
+            f1=float(report["macro_f1"]),
+            wf1=float(report["weighted_f1"]),
         )
     )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate routing quality from labeled CSV.")
-    parser.add_argument("--csv", required=True, help="Path to labeled CSV.")
-    parser.add_argument("--out-json", default="", help="Optional path to save JSON report.")
-
-    parser.add_argument("--intent-true-col", default="final_intent_id")
-    parser.add_argument("--intent-pred-col", default="ai_intent_id")
-    parser.add_argument("--group-true-col", default="final_group_id")
-    parser.add_argument("--group-pred-col", default="ai_group_id")
-    parser.add_argument("--priority-true-col", default="final_priority")
-    parser.add_argument("--priority-pred-col", default="ai_priority")
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate routing quality from one fixed CSV format.")
+    parser.add_argument("--csv", required=True)
+    parser.add_argument("--out-json", default="")
     return parser.parse_args()
 
 
-def main() -> int:
+def main():
     args = parse_args()
     csv_path = Path(args.csv).expanduser().resolve()
+
     if not csv_path.exists():
         print(f"[ERROR] csv not found: {csv_path}")
         return 2
 
-    rows, headers = _read_csv(csv_path)
+    rows = read_csv(csv_path)
     if not rows:
         print(f"[ERROR] csv is empty: {csv_path}")
         return 2
 
-    intent_true_col = _pick_column(headers, args.intent_true_col, ["final_intent_id", "call_purpose", "true_intent", "intent_id"])
-    intent_pred_col = _pick_column(headers, args.intent_pred_col, ["ai_intent_id", "pred_intent", "pred_intent_id", "intent_id"])
-    group_true_col = _pick_column(headers, args.group_true_col, ["final_group_id", "final_group", "group_id"])
-    group_pred_col = _pick_column(headers, args.group_pred_col, ["ai_group_id", "pred_group_id", "suggested_group"])
-    priority_true_col = _pick_column(headers, args.priority_true_col, ["final_priority", "priority"])
-    priority_pred_col = _pick_column(headers, args.priority_pred_col, ["ai_priority", "pred_priority", "priority"])
-
-    if not intent_true_col or not intent_pred_col:
-        print("[ERROR] missing required intent columns")
-        print("headers:", ", ".join(headers))
+    required = [
+        "final_intent_id",
+        "ai_intent_id",
+        "final_group_id",
+        "ai_group_id",
+        "final_priority",
+        "ai_priority",
+    ]
+    missing = [name for name in required if name not in rows[0]]
+    if missing:
+        print("[ERROR] missing columns:", ", ".join(missing))
         return 2
 
-    it_y, ip_y, i_skip = _build_pairs(rows, intent_true_col, intent_pred_col)
-    intent_metrics = _task_metrics(it_y, ip_y)
+    intent_report = build_report(rows, "final_intent_id", "ai_intent_id")
+    group_report = build_report(rows, "final_group_id", "ai_group_id")
+    priority_report = build_report(rows, "final_priority", "ai_priority")
 
-    _print_task("Intent", intent_metrics, i_skip, intent_true_col, intent_pred_col)
+    print_report("Intent", intent_report)
+    print_report("Group", group_report)
+    print_report("Priority", priority_report)
 
     report = {
         "csv": str(csv_path),
         "rows_total": len(rows),
-        "intent": {"true_col": intent_true_col, "pred_col": intent_pred_col, "skipped_unlabeled": i_skip, **intent_metrics},
+        "intent": intent_report,
+        "group": group_report,
+        "priority": priority_report,
     }
-
-    if group_true_col and group_pred_col:
-        gt_y, gp_y, g_skip = _build_pairs(rows, group_true_col, group_pred_col)
-        group_metrics = _task_metrics(gt_y, gp_y)
-        _print_task("Group", group_metrics, g_skip, group_true_col, group_pred_col)
-        report["group"] = {"true_col": group_true_col, "pred_col": group_pred_col, "skipped_unlabeled": g_skip, **group_metrics}
-    else:
-        print("\n[INFO] group columns not found, skipping group metrics")
-
-    if priority_true_col and priority_pred_col:
-        pt_y, pp_y, p_skip = _build_pairs(rows, priority_true_col, priority_pred_col)
-        priority_metrics = _task_metrics(pt_y, pp_y)
-        _print_task("Priority", priority_metrics, p_skip, priority_true_col, priority_pred_col)
-        report["priority"] = {"true_col": priority_true_col, "pred_col": priority_pred_col, "skipped_unlabeled": p_skip, **priority_metrics}
-    else:
-        print("[INFO] priority columns not found, skipping priority metrics")
 
     out_json = Path(args.out_json).expanduser().resolve() if args.out_json else (csv_path.parent / "routing_metrics.json")
     out_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

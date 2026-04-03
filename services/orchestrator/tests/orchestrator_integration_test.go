@@ -1,4 +1,4 @@
-package services
+package tests
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"orchestrator/internal/clients"
 	callprocessingv1 "orchestrator/internal/gen"
+	"orchestrator/internal/services"
 )
 
 type fakeTranscriptionServer struct {
@@ -270,7 +271,7 @@ func TestProcessCallIntegrationFullPipeline(t *testing.T) {
 	}
 	defer notificationClient.Close()
 
-	service := NewOrchestratorService(
+	service := services.NewOrchestratorService(
 		transcriptionClient,
 		routingClient,
 		ticketClient,
@@ -284,8 +285,8 @@ func TestProcessCallIntegrationFullPipeline(t *testing.T) {
 		t.Fatalf("process call: %v", err)
 	}
 
-	if result.Status != ProcessStatusCompleted {
-		t.Fatalf("expected status %q, got %q", ProcessStatusCompleted, result.Status)
+	if result.Status != services.ProcessStatusCompleted {
+		t.Fatalf("expected status %q, got %q", services.ProcessStatusCompleted, result.Status)
 	}
 	if result.CallID != "call-001" {
 		t.Fatalf("unexpected call id: %s", result.CallID)
@@ -430,7 +431,7 @@ func TestProcessCallIntegrationStopsOnLowConfidenceRouting(t *testing.T) {
 	}
 	defer notificationClient.Close()
 
-	service := NewOrchestratorService(
+	service := services.NewOrchestratorService(
 		transcriptionClient,
 		routingClient,
 		ticketClient,
@@ -444,8 +445,8 @@ func TestProcessCallIntegrationStopsOnLowConfidenceRouting(t *testing.T) {
 		t.Fatalf("process call: %v", err)
 	}
 
-	if result.Status != ProcessStatusAwaitingRoutingReview {
-		t.Fatalf("expected status %q, got %q", ProcessStatusAwaitingRoutingReview, result.Status)
+	if result.Status != services.ProcessStatusAwaitingRoutingReview {
+		t.Fatalf("expected status %q, got %q", services.ProcessStatusAwaitingRoutingReview, result.Status)
 	}
 	if ticketServer.count() != 0 {
 		t.Fatalf("ticket service must not be called, got %d calls", ticketServer.count())
