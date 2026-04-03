@@ -231,8 +231,8 @@ func setupRouter(
 	router.Use(corsMiddleware(cfg.CORSAllowedOrigins))
 	router.Use(requestIDMiddleware())
 
-	// Limit upload size (500 MB)
-	router.MaxMultipartMemory = 500 << 20
+	// Limit upload size (100 MB)
+	router.MaxMultipartMemory = 100 << 20
 
 	// Public routes
 	router.GET("/", func(c *gin.Context) {

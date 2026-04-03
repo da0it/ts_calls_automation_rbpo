@@ -935,6 +935,9 @@
       if (!stoppedAt && call.review && call.review.completedAt) {
         stoppedAt = String(call.review.completedAt);
       }
+      if (!stoppedAt) {
+        stoppedAt = getAutomaticSlaStopTime(call);
+      }
       if (!stoppedAt && call.status === 'spam_blocked') {
         stoppedAt = String(call.createdAt || '');
       }
@@ -985,6 +988,36 @@
         remainingMs,
         tone
       };
+    }
+
+    function normalizeTimestamp(value) {
+      const text = String(value || '').trim();
+      if (!text) return '';
+      return Number.isNaN(Date.parse(text)) ? '' : text;
+    }
+
+    function hasCreatedTicket(ticket) {
+      return Boolean(
+        ticket &&
+        (
+          ticket.ticketId ||
+          ticket.externalId ||
+          ticket.url ||
+          ticket.system ||
+          ticket.createdAt
+        )
+      );
+    }
+
+    function getAutomaticSlaStopTime(call) {
+      if (!call || typeof call !== 'object') return '';
+      if (call.status === 'spam_blocked') {
+        return normalizeTimestamp(call.processedAt || call.createdAt);
+      }
+      if (!hasCreatedTicket(call.ticket)) {
+        return '';
+      }
+      return normalizeTimestamp(call.ticket.createdAt || call.processedAt || (call.raw && call.raw.processed_at));
     }
 
     function formatTimerDuration(milliseconds) {
@@ -1259,12 +1292,15 @@
       const defaultGroup = intentMeta ? intentMeta.default_group : (state.catalog.groups[0] ? state.catalog.groups[0].id : '');
       const defaultPriority = intentMeta ? intentMeta.priority : 'medium';
       const slaMinutes = normalizeSlaMinutes(state.appSettings && state.appSettings.slaMinutes);
-      const autoStoppedAt = status === 'spam_blocked' ? processedAt : '';
+      const autoStoppedAt = status === 'spam_blocked'
+        ? processedAt
+        : normalizeTimestamp((ticket && ticket.createdAt) || (hasCreatedTicket(ticket) ? processedAt : ''));
 
       return {
         id: crypto.randomUUID ? crypto.randomUUID() : 'call-' + Date.now(),
         sourceFilename: file.name,
         createdAt: requestReceivedAt,
+        processedAt,
         callId,
         status,
         transcript: payload && payload.transcript ? payload.transcript : { segments: [] },
@@ -1310,9 +1346,13 @@
 
     function normalizeTicket(raw) {
       if (!raw || typeof raw !== 'object') return null;
+      const ticketId = String(raw.ticket_id || raw.ticketId || '').trim();
+      const externalId = String(raw.external_id || raw.externalId || '').trim();
       const url = String(raw.url || '').trim();
-      if (!url) return null;
-      return { url };
+      const system = String(raw.system || '').trim();
+      const createdAt = normalizeTimestamp(raw.created_at || raw.createdAt);
+      if (!ticketId && !externalId && !url && !system && !createdAt) return null;
+      return { ticketId, externalId, url, system, createdAt };
     }
 
     function isAwaitingSpamReview(call) {
@@ -2052,7 +2092,7 @@
       const preservedSla = ensureCallSla(call);
       const preservedStartedAt = preservedSla && preservedSla.startedAt ? preservedSla.startedAt : updated.createdAt;
       const preservedLimitMinutes = normalizeSlaMinutes(preservedSla && preservedSla.limitMinutes);
-      const updatedStopTime = String(opts.stopTime || '').trim();
+      const updatedStopTime = getAutomaticSlaStopTime(updated) || normalizeTimestamp(opts.stopTime);
       const preserveReview = Boolean(opts.preserveReview);
 
       if (preserveReview) {
@@ -2439,6 +2479,8 @@
       if (!call.status) {
         call.status = 'completed';
       }
+      call.processedAt = normalizeTimestamp(call.processedAt || (call.raw && call.raw.processed_at));
+      call.ticket = normalizeTicket(call.ticket || (call.raw && call.raw.ticket));
       call.spamCheck = normalizeSpamCheck(call.spamCheck || (call.raw && call.raw.spam_check) || (call.raw && call.raw.routing && call.raw.routing.spam_check));
       if (!call.review || typeof call.review !== 'object') {
         call.review = {
