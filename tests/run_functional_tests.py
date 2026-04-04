@@ -103,7 +103,7 @@ def add_result(results, code, title, status, note="", details=None):
 def validate_ok_response(payload, allow_review_status):
     allowed = {"completed"}
     if allow_review_status:
-        allowed.update({"awaiting_routing_review", "awaiting_spam_review", "spam_blocked"})
+        allowed.update({"awaiting_routing_review", "spam_blocked"})
 
     status = str(payload.get("status") or "").strip()
     require(status in allowed, f"unexpected status: {status}")

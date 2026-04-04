@@ -252,8 +252,6 @@ export default function (data) {
     resultCompletedCount.add(1);
   } else if (status === 'spam_blocked') {
     resultSpamBlockedCount.add(1);
-  } else if (status === 'awaiting_spam_review') {
-    resultReviewRequiredCount.add(1);
   }
 
   check(response, {
