@@ -112,6 +112,11 @@ func main() {
 		cfg.RoutingAutoLearnLimit,
 		routingConfigService,
 	)
+	spamFeedbackService := services.NewSpamFeedbackService(
+		cfg.SpamGateFeedbackPath,
+		cfg.SpamGatePositiveLabel,
+		cfg.SpamGateNegativeLabel,
+	)
 	routingModelService := services.NewRoutingModelService(
 		cfg.RouterAdminURL,
 		cfg.RouterAdminToken,
@@ -126,6 +131,7 @@ func main() {
 		appSettingsService,
 		routingConfigService,
 		routingFeedbackService,
+		spamFeedbackService,
 		routingModelService,
 		auditService,
 	)
@@ -251,6 +257,7 @@ func setupRouter(
 		api.GET("/auth/me", auth.Me)
 		api.POST("/process-call", h.ProcessCall)
 		api.GET("/calls", h.ListCalls)
+		api.POST("/spam-override", h.OverrideSpamBlock)
 		api.POST("/routing-review", h.ResolveRoutingReview)
 		api.GET("/app-settings", h.GetAppSettings)
 		api.GET("/routing-config", h.GetRoutingConfig)

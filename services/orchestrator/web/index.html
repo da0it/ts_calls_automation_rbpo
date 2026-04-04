@@ -660,6 +660,7 @@
       loginBanner: null,
       authBusy: false,
       authMode: 'login',
+      spamOverrideBusy: false,
       routingReviewBusy: false,
       users: [],
       auth: {
@@ -1537,6 +1538,11 @@
             <strong>Reason:</strong> ${escapeHtml(spamCheck.reason || '-')}<br />
             <strong>Predicted label:</strong> ${escapeHtml(spamCheck.predicted_label || '-')}
           </div>
+          ${isSpamBlockedCall(call) ? `
+            <div class="toolbar">
+              <button id="spam-override-btn" class="btn btn-ok" type="button" ${state.spamOverrideBusy ? 'disabled' : ''}>Continue Processing</button>
+            </div>
+          ` : ''}
         </section>
       ` : '';
 
@@ -1556,6 +1562,7 @@
         ` : '';
 
         el.workspace.innerHTML = metaBlock + spamMetaBlock + transcriptBlock + rawBlock;
+        bindSpamOverrideActions();
         renderBanner();
         return;
       }
@@ -1843,6 +1850,15 @@
         call.review.comment = commentInput.value;
         persist();
       });
+    }
+
+    function bindSpamOverrideActions() {
+      const call = getSelectedCall();
+      if (!call || !isSpamBlockedCall(call)) return;
+
+      const button = document.getElementById('spam-override-btn');
+      if (!button) return;
+      button.addEventListener('click', () => overrideSpamBlock());
     }
 
     function bindCatalogInputs() {
@@ -2147,6 +2163,41 @@
       }
     }
 
+    async function overrideSpamBlock() {
+      const call = getSelectedCall();
+      if (!call || !isSpamBlockedCall(call)) return;
+
+      state.spamOverrideBusy = true;
+      renderActions();
+      setBanner('Continuing call after spam override...', 'ok');
+
+      try {
+        const payload = await apiJson('/api/v1/spam-override', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            queue_id: call.id || '',
+            call_id: call.callId || '',
+            source_filename: call.sourceFilename || '',
+            transcript: call.transcript || { segments: [] },
+            spam_check: call.spamCheck || {}
+          })
+        });
+        await reloadCallsAndSelect(payload && payload.queue_id || call.id);
+        const updated = getSelectedCall();
+        if (updated && updated.status === 'awaiting_routing_review') {
+          setBanner('Spam block removed. Call moved to routing review.', 'ok');
+        } else {
+          setBanner('Spam block removed. Call continued successfully.', 'ok');
+        }
+      } catch (err) {
+        setBanner(String(err.message || err), 'error');
+      } finally {
+        state.spamOverrideBusy = false;
+        renderActions();
+      }
+    }
+
     async function clearAllCalls() {
       if (!isAdmin()) {
         setBanner('Only admins can remove calls from the shared review queue.', 'error');
@@ -2345,7 +2396,7 @@
     }
 
     function renderActions() {
-      const disabled = state.processing || state.routingReviewBusy || !isAuthenticated();
+      const disabled = state.processing || state.spamOverrideBusy || state.routingReviewBusy || !isAuthenticated();
       el.logoutBtn.disabled = state.processing;
       el.processBtn.disabled = disabled;
       el.clearBtn.classList.toggle('hidden', !isAdmin());

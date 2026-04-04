@@ -31,6 +31,7 @@ type ProcessHandler struct {
 	appSettingsService     *services.AppSettingsService
 	routingConfigService   *services.RoutingConfigService
 	routingFeedbackService *services.RoutingFeedbackService
+	spamFeedbackService    *services.SpamFeedbackService
 	routingModelService    *services.RoutingModelService
 	auditService           *services.AuditService
 	uploadDir              string
@@ -337,6 +338,7 @@ func NewProcessHandler(
 	appSettingsService *services.AppSettingsService,
 	routingConfigService *services.RoutingConfigService,
 	routingFeedbackService *services.RoutingFeedbackService,
+	spamFeedbackService *services.SpamFeedbackService,
 	routingModelService *services.RoutingModelService,
 	auditService *services.AuditService,
 ) *ProcessHandler {
@@ -350,6 +352,7 @@ func NewProcessHandler(
 		appSettingsService:     appSettingsService,
 		routingConfigService:   routingConfigService,
 		routingFeedbackService: routingFeedbackService,
+		spamFeedbackService:    spamFeedbackService,
 		routingModelService:    routingModelService,
 		auditService:           auditService,
 		uploadDir:              uploadDir,
@@ -544,6 +547,14 @@ type spamReviewTranscriptPayload struct {
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
+type spamOverrideRequest struct {
+	QueueID        string                      `json:"queue_id"`
+	CallID         string                      `json:"call_id"`
+	SourceFilename string                      `json:"source_filename"`
+	Transcript     spamReviewTranscriptPayload `json:"transcript"`
+	SpamCheck      reviewSpamCheckPayload      `json:"spam_check"`
+}
+
 type routingReviewRequest struct {
 	QueueID        string                      `json:"queue_id"`
 	CallID         string                      `json:"call_id"`
@@ -552,6 +563,68 @@ type routingReviewRequest struct {
 	Transcript     spamReviewTranscriptPayload `json:"transcript"`
 	Routing        reviewRoutingPayload        `json:"routing"`
 	SpamCheck      reviewSpamCheckPayload      `json:"spam_check"`
+}
+
+func (h *ProcessHandler) OverrideSpamBlock(c *gin.Context) {
+	var payload spamOverrideRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	transcript := buildTranscript(payload.CallID, payload.Transcript)
+	spamCheck := buildSpamCheck(payload.SpamCheck)
+
+	if h.spamFeedbackService != nil {
+		if _, err := h.spamFeedbackService.SaveDecision(services.SpamGateFeedbackRequest{
+			CallID:         transcript.CallID,
+			SourceFilename: payload.SourceFilename,
+			Decision:       "not_spam",
+			SpamCheck: services.SpamGateFeedbackMeta{
+				Status:         payload.SpamCheck.Status,
+				PredictedLabel: payload.SpamCheck.PredictedLabel,
+				Confidence:     payload.SpamCheck.Confidence,
+				ThresholdLow:   payload.SpamCheck.ThresholdLow,
+				ThresholdHigh:  payload.SpamCheck.ThresholdHigh,
+				Reason:         payload.SpamCheck.Reason,
+				Backend:        payload.SpamCheck.Backend,
+			},
+		}); err != nil {
+			log.Printf("Failed to save spam override feedback: %v", err)
+		}
+	}
+
+	result, err := h.orchestrator.ContinueAfterSpamBlock(services.ContinueAfterSpamBlockInput{
+		CallID:         payload.CallID,
+		SourceFilename: payload.SourceFilename,
+		Transcript:     transcript,
+		SpamCheck:      spamCheck,
+	})
+	if err != nil {
+		h.writeAudit(c, "call.spam_override", "call", transcript.CallID, "failed", map[string]interface{}{
+			"reason": err.Error(),
+		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.writeAudit(c, "call.spam_override", "call", transcript.CallID, "success", map[string]interface{}{
+		"status": result.Status,
+	})
+	result.ProcessedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	existing := map[string]interface{}{}
+	if payload.QueueID != "" && h.callQueueService != nil {
+		if current, getErr := h.callQueueService.Get(payload.QueueID); getErr == nil {
+			existing = current
+		}
+	}
+	if record, buildErr := h.buildQueueCallRecord(result, payload.SourceFilename, payload.QueueID, existing, nil); buildErr != nil {
+		log.Printf("Failed to build spam override call queue record: %v", buildErr)
+	} else {
+		result.QueueID = h.saveQueueRecord(record)
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *ProcessHandler) ResolveRoutingReview(c *gin.Context) {
@@ -649,6 +722,7 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 			"app_settings":     "GET /api/v1/app-settings, PUT /api/v1/app-settings (admin)",
 			"routing_config":   "GET /api/v1/routing-config",
 			"routing_feedback": "POST /api/v1/routing-feedback",
+			"spam_override":    "POST /api/v1/spam-override",
 			"routing_review":   "POST /api/v1/routing-review",
 			"routing_model":    "GET /api/v1/routing-model/status",
 			"calls_admin":      "DELETE /api/v1/calls, DELETE /api/v1/calls/:id (admin)",
@@ -658,7 +732,7 @@ func (h *ProcessHandler) Root(c *gin.Context) {
 		},
 		"pipeline": []string{
 			"1. Transcription + Diarization",
-			"2. Spam Gate (allow / block)",
+			"2. Spam Gate (allow / block, blocked calls can be continued manually)",
 			"3. Routing (RuBERT Intent Classification + low-confidence review)",
 			"4. Entity Extraction",
 			"5. Ticket Creation",
