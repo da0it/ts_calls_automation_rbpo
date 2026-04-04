@@ -52,6 +52,14 @@ func (c *TranscriptionClient) Transcribe(audioPath string) (*TranscriptionRespon
 		return nil, fmt.Errorf("read audio file: %w", err)
 	}
 
+	callID := filepath.Base(audioPath)
+	if ext := filepath.Ext(callID); ext != "" {
+		callID = callID[:len(callID)-len(ext)]
+	}
+	if callID == "" {
+		callID = "unknown-call"
+	}
+
 	timeoutSec := 9999
 	if raw := os.Getenv("TRANSCRIPTION_RPC_TIMEOUT_SECONDS"); raw != "" {
 		if parsed, parseErr := strconv.Atoi(raw); parseErr == nil && parsed > 0 {
@@ -64,6 +72,7 @@ func (c *TranscriptionClient) Transcribe(audioPath string) (*TranscriptionRespon
 	resp, err := c.client.Transcribe(ctx, &callprocessingv1.TranscribeRequest{
 		Audio:    audioData,
 		Filename: filepath.Base(audioPath),
+		CallId:   callID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("transcription rpc: %w", err)
@@ -72,6 +81,9 @@ func (c *TranscriptionClient) Transcribe(audioPath string) (*TranscriptionRespon
 	result := &TranscriptionResponse{
 		CallID:      resp.GetTranscript().GetCallId(),
 		RoleMapping: resp.GetTranscript().GetRoleMapping(),
+	}
+	if result.CallID == "" {
+		result.CallID = callID
 	}
 
 	if meta := resp.GetTranscript().GetMetadata(); meta != nil {
