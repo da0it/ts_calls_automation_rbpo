@@ -120,6 +120,29 @@ func normalizePriority(raw string) string {
 	return value
 }
 
+func buildSuggestedReview(result *services.ProcessCallResult) map[string]interface{} {
+	intentID := ""
+	priority := "medium"
+	group := ""
+	if result != nil && result.Routing != nil {
+		intentID = strings.TrimSpace(result.Routing.IntentID)
+		priority = normalizePriority(result.Routing.Priority)
+		group = strings.TrimSpace(result.Routing.SuggestedGroup)
+	}
+	if intentID == "" {
+		intentID = "misc.triage"
+	}
+	return map[string]interface{}{
+		"decision":    "pending",
+		"intentId":    intentID,
+		"priority":    priority,
+		"group":       group,
+		"errorType":   "none",
+		"comment":     "",
+		"completedAt": "",
+	}
+}
+
 func mapString(value interface{}) string {
 	if value == nil {
 		return ""
@@ -618,7 +641,8 @@ func (h *ProcessHandler) OverrideSpamBlock(c *gin.Context) {
 			existing = current
 		}
 	}
-	if record, buildErr := h.buildQueueCallRecord(result, payload.SourceFilename, payload.QueueID, existing, nil); buildErr != nil {
+	review := buildSuggestedReview(result)
+	if record, buildErr := h.buildQueueCallRecord(result, payload.SourceFilename, payload.QueueID, existing, review); buildErr != nil {
 		log.Printf("Failed to build spam override call queue record: %v", buildErr)
 	} else {
 		result.QueueID = h.saveQueueRecord(record)
