@@ -66,7 +66,7 @@ func Load() *Config {
 		TicketGRPCAddr:                   getEnv("TICKET_GRPC_ADDR", "localhost:50054"),
 		TicketRPCTimeoutSeconds:          getEnvInt("TICKET_RPC_TIMEOUT_SECONDS", 300),
 		EntityServiceURL:                 getEnv("ENTITY_SERVICE_URL", "http://localhost:5001"),
-		RoutingReviewConfidenceThreshold: getEnvFloat("ROUTING_REVIEW_CONFIDENCE_THRESHOLD", getEnvFloat("ROUTER_MIN_CONFIDENCE", 0.5)),
+		RoutingReviewConfidenceThreshold: getEnvFloat("ROUTING_REVIEW_CONFIDENCE_THRESHOLD", getEnvFloat("ROUTER_MIN_CONFIDENCE", 0.8)),
 		RoutingIntentsPath:               getEnv("ROUTING_INTENTS_PATH", "../router/configs/intents.json"),
 		RoutingGroupsPath:                getEnv("ROUTING_GROUPS_PATH", "../router/configs/groups.json"),
 		RoutingFeedbackPath:              getEnv("ROUTING_FEEDBACK_PATH", "./data/routing_feedback.jsonl"),
