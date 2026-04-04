@@ -633,19 +633,20 @@
 
     const FALLBACK_CATALOG = {
       groups: [
-        { id: 'technical_support', title: 'Техническая поддержка', description: 'Основная группа обработки технических обращений и проблем клиентов.' },
-        { id: 'training_department', title: 'Отдел обучения', description: 'Курсы, программы обучения, расписание и учебные материалы.' },
-        { id: 'sales_department', title: 'Отдел продаж', description: 'Коммерческие обращения, консультации перед покупкой и деловые предложения.' },
-        { id: 'helpdesk_triage', title: 'Первая линия / triage', description: 'Первичная маршрутизация неясных обращений и ручная проверка спорных случаев.' }
+        { id: 'consulting', title: 'Consulting', description: 'Консультационные обращения и предварительные запросы клиентов.' },
+        { id: 'cooperation_department', title: 'Cooperation Department', description: 'Партнерство, конференции и внешние деловые предложения.' },
+        { id: 'education_center', title: 'Education Center', description: 'Обучение, курсы, программы и учебные мероприятия.' },
+        { id: 'sales', title: 'Sales', description: 'Продажи, лицензии, подключение услуг и коммерческие заявки.' },
+        { id: 'support', title: 'Support', description: 'Поддержка, доступ в портал и первичная обработка неясных обращений.' }
       ],
       intents: [
-        { id: 'spam.call', title: 'Спам', default_group: 'helpdesk_triage', priority: 'high', examples: ['это спам'] },
-        { id: 'training.courses', title: 'Обучение (курсы)', default_group: 'training_department', priority: 'medium', examples: ['хочу записаться на курс'] },
-        { id: 'consultation.general', title: 'Консультация', default_group: 'sales_department', priority: 'medium', examples: ['нужна консультация'] },
-        { id: 'sales.service_purchase', title: 'Приобретение услуг', default_group: 'sales_department', priority: 'high', examples: ['хочу купить услугу'] },
-        { id: 'conference.invite_company', title: 'Приглашение на конференцию', default_group: 'sales_department', priority: 'medium', examples: ['приглашаем на конференцию'] },
-        { id: 'conference.company_participation', title: 'Участие в конференции', default_group: 'sales_department', priority: 'medium', examples: ['хотим участвовать в конференции'] },
-        { id: 'misc.triage', title: 'Неопределенное обращение', default_group: 'helpdesk_triage', priority: 'medium', examples: ['есть вопрос'] }
+        { id: 'spam.call', title: 'Спам', default_group: 'support', priority: 'high', examples: ['это спам'] },
+        { id: 'consulting', title: 'Консультация', default_group: 'consulting', priority: 'medium', examples: ['нужна консультация'] },
+        { id: 'cooperation', title: 'Сотрудничество', default_group: 'cooperation_department', priority: 'medium', examples: ['приглашаем на конференцию'] },
+        { id: 'courses', title: 'Обучение', default_group: 'education_center', priority: 'medium', examples: ['хочу записаться на курс'] },
+        { id: 'license', title: 'Продажа / лицензия', default_group: 'sales', priority: 'high', examples: ['хочу купить услугу'] },
+        { id: 'portal_access', title: 'Доступ в портал', default_group: 'support', priority: 'high', examples: ['не могу войти в личный кабинет'] },
+        { id: 'misc.triage', title: 'Неопределенное обращение', default_group: 'support', priority: 'medium', examples: ['есть вопрос'] }
       ]
     };
 

@@ -76,7 +76,7 @@ func TestCreateTicketSkipsPythonNERWhenEntitiesAlreadyProvided(t *testing.T) {
 		Routing: models.RoutingData{
 			IntentID:       "misc.triage",
 			Priority:       "high",
-			SuggestedGroup: "technical_support",
+			SuggestedGroup: "support",
 		},
 		Entities: &models.Entities{
 			Phones: []models.ExtractedEntity{{Value: "+79991234567"}},

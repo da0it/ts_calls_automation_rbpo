@@ -128,7 +128,7 @@ func sampleTicketPayload() *models.TicketSystemPayload {
 				IntentID:         "misc.triage",
 				IntentConfidence: 0.97,
 				Priority:         "high",
-				SuggestedGroup:   "technical_support",
+				SuggestedGroup:   "support",
 			},
 			Entities: &models.Entities{
 				Phones: []models.ExtractedEntity{{Value: "+79991234567"}},
@@ -143,7 +143,7 @@ func sampleTicketPayload() *models.TicketSystemPayload {
 			Description:  "Проблема: Клиент не может войти в личный кабинет.",
 			Priority:     "high",
 			AssigneeType: "group",
-			AssigneeID:   "technical_support",
+			AssigneeID:   "support",
 			Tags:         []string{"misc.triage", "urgent"},
 			CallID:       "call-123",
 			AudioURL:     "https://storage.example/call.wav",

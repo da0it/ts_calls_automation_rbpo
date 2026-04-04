@@ -102,7 +102,7 @@ func (s *TicketCreatorService) buildTicketDraft(
 	assigneeType := "group"
 	assigneeID := req.Routing.SuggestedGroup
 	if assigneeID == "" {
-		assigneeID = "technical_support"
+		assigneeID = "support"
 	}
 
 	// Генерируем теги

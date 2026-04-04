@@ -227,7 +227,7 @@ func TestProcessCallIntegrationFullPipeline(t *testing.T) {
 			IntentId:         "orders.problem",
 			IntentConfidence: 0.91,
 			Priority:         "high",
-			SuggestedGroup:   "technical_support",
+			SuggestedGroup:   "support",
 			SpamCheck: &callprocessingv1.SpamCheck{
 				Status:         "allow",
 				PredictedLabel: "not_spam",
@@ -299,7 +299,7 @@ func TestProcessCallIntegrationStopsOnLowConfidenceRouting(t *testing.T) {
 			IntentId:         "misc.triage",
 			IntentConfidence: 0.22,
 			Priority:         "medium",
-			SuggestedGroup:   "helpdesk_triage",
+			SuggestedGroup:   "support",
 			SpamCheck: &callprocessingv1.SpamCheck{
 				Status:         "allow",
 				PredictedLabel: "not_spam",

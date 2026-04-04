@@ -274,7 +274,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 notes=reason,
             ),
             priority="medium",
-            suggested_targets=[{"type": "group", "id": "helpdesk_triage", "confidence": 0.0}],
+            suggested_targets=[{"type": "group", "id": "support", "confidence": 0.0}],
             raw={
                 "mode": "finetuned_only",
                 "model_version": self.model_name,
@@ -331,7 +331,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         spam_intent = allowed_intents.get(RESERVED_SPAM_INTENT_ID, {})
         confidence = float(spam_meta.get("positive_confidence") or 0.0)
         priority = self._normalize_priority(spam_intent.get("priority", "high"))
-        default_group = str(spam_intent.get("default_group") or "helpdesk_triage").strip() or "helpdesk_triage"
+        default_group = str(spam_intent.get("default_group") or "support").strip() or "support"
         return AIAnalysis(
             intent=IntentResult(
                 intent_id=RESERVED_SPAM_INTENT_ID,
