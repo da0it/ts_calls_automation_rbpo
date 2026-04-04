@@ -122,6 +122,7 @@ def validate_ok_response(payload, allow_review_status):
     return {
         "status": status,
         "call_id": str(payload.get("call_id") or ""),
+        "queue_id": str(payload.get("queue_id") or ""),
         "intent_id": str(payload["routing"].get("intent_id") or ""),
         "priority": str(payload["routing"].get("priority") or ""),
     }
@@ -250,6 +251,31 @@ def main():
             add_result(results, "T20", "Ticket creation", "passed", details={"ticket_id": ticket["ticket_id"]})
         except Exception as exc:
             add_result(results, "T20", "Ticket creation", "failed", str(exc))
+
+    try:
+        require(good_calls, "no successful process-call requests")
+        queue_call = good_calls[0]
+        require(queue_call["queue_id"], "queue_id is empty")
+        status, body = request_json(f"{base_url}/api/v1/calls?limit=200", headers=admin_headers)
+        require(status == 200, f"expected 200, got {status}")
+        require(isinstance(body.get("calls"), list), "calls are missing")
+
+        found = None
+        for item in body["calls"]:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("id") or "").strip()
+            item_call_id = str(item.get("callId") or "").strip()
+            if item_id == queue_call["queue_id"] or item_call_id == queue_call["call_id"]:
+                found = item
+                break
+
+        require(found is not None, "processed call was not found in shared queue")
+        require(str(found.get("callId") or "").strip() == queue_call["call_id"], "wrong call id in shared queue")
+        require(str(found.get("status") or "").strip() == queue_call["status"], "wrong status in shared queue")
+        add_result(results, "T21", "Shared call queue", "passed", details={"queue_id": queue_call["queue_id"]})
+    except Exception as exc:
+        add_result(results, "T21", "Shared call queue", "failed", str(exc))
 
     try:
         require(good_calls, "no successful process-call requests")

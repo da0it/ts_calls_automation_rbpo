@@ -151,7 +151,7 @@ func buildServiceForTest(
 			TicketId:   "ticket-001",
 			ExternalId: "EXT-001",
 			Url:        "http://ticket.local/ticket-001",
-			System:     "mock",
+			System:     "simpleone",
 			CreatedAt:  timestamppb.New(time.Now()),
 		},
 	}
