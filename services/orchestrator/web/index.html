@@ -1507,9 +1507,14 @@
             <div class="kv"><div class="k">Backend</div><div class="v">${escapeHtml(spamCheck && spamCheck.backend || '-')}</div></div>
       ` : '';
       const ticketUrl = String((call.ticket && call.ticket.url) || (call.raw && call.raw.ticket && call.raw.ticket.url) || '').trim();
-      const ticketMetaRow = ticketUrl ? `
+      const ticketRef = String((call.ticket && (call.ticket.externalId || call.ticket.ticketId)) || (call.raw && call.raw.ticket && (call.raw.ticket.external_id || call.raw.ticket.ticket_id)) || '').trim();
+      const ticketMetaRow = ticketUrl
+        ? `
             <div class="kv"><div class="k">Ticket</div><div class="v"><a href="${escapeAttr(ticketUrl)}" target="_blank" rel="noopener noreferrer">Open ticket</a></div></div>
-      ` : '';
+        `
+        : (ticketRef ? `
+            <div class="kv"><div class="k">Ticket</div><div class="v">${escapeHtml(ticketRef)}</div></div>
+        ` : '');
       const saveDecisionHelp = isAdmin()
         ? ' Save Decision = persist decision and send feedback for model improvement.'
         : '';

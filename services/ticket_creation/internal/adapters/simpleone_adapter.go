@@ -174,6 +174,7 @@ func collapseWhitespace(value string) string {
 
 func buildSimpleOneCreated(respBody []byte, payload *models.TicketSystemPayload) *models.TicketCreated {
 	created := &models.TicketCreated{
+		TicketID:   simpleOneAckID(payload),
 		ExternalID: simpleOneAckID(payload),
 		System:     "simpleone",
 		CreatedAt:  time.Now().UTC(),
@@ -187,14 +188,39 @@ func buildSimpleOneCreated(respBody []byte, payload *models.TicketSystemPayload)
 		return created
 	}
 
-	data, _ := decoded["data"].(map[string]interface{})
-	if id, ok := data["id"].(string); ok && strings.TrimSpace(id) != "" {
-		created.ExternalID = strings.TrimSpace(id)
+	if id := simpleOneFindString(decoded, "external_id", "id", "number", "ticket_id"); id != "" {
+		created.TicketID = id
+		created.ExternalID = id
 	}
-	if url, ok := data["record_url"].(string); ok && strings.TrimSpace(url) != "" {
-		created.URL = strings.TrimSpace(url)
+	if url := simpleOneFindString(decoded, "record_url", "url", "recordUrl", "href", "link"); url != "" {
+		created.URL = url
 	}
 	return created
+}
+
+func simpleOneFindString(node interface{}, keys ...string) string {
+	switch value := node.(type) {
+	case map[string]interface{}:
+		for _, key := range keys {
+			if raw, ok := value[key]; ok {
+				if text, ok := raw.(string); ok && strings.TrimSpace(text) != "" {
+					return strings.TrimSpace(text)
+				}
+			}
+		}
+		for _, raw := range value {
+			if text := simpleOneFindString(raw, keys...); text != "" {
+				return text
+			}
+		}
+	case []interface{}:
+		for _, item := range value {
+			if text := simpleOneFindString(item, keys...); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
 }
 
 func simpleOneAckID(payload *models.TicketSystemPayload) string {
