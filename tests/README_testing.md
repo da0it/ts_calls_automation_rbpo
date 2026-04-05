@@ -63,6 +63,15 @@ python3 tests/evaluate_ab_test.py \
 ```
 
 ```bash
+python3 tests/evaluate_pipeline_csv.py \
+  --csv /absolute/path/to/final.csv \
+  --audio-dir /absolute/path/to/audio_folder \
+  --base-url http://localhost:8000 \
+  --username admin \
+  --password 'YOUR_PASSWORD'
+```
+
+```bash
 BASE_URL=http://localhost:8000 \
 USERNAME=admin \
 PASSWORD='YOUR_PASSWORD' \
