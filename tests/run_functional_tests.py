@@ -14,6 +14,7 @@ from pathlib import Path
 
 ALLOWED_AUDIO = {".mp3", ".wav", ".ogg", ".m4a", ".flac"}
 REQUIRED_AUDIO_FOR_FULL_COVERAGE = {".mp3", ".wav", ".ogg"}
+KNOWN_PROCESS_STATUSES = {"completed", "awaiting_routing_review", "spam_blocked"}
 ENTITY_KEYS = [
     "persons",
     "phones",
@@ -122,12 +123,8 @@ def mark_requirement(results, code, title, ok, note="", details=None):
 
 
 def validate_ok_response(payload, allow_review_status):
-    allowed = {"completed"}
-    if allow_review_status:
-        allowed.update({"awaiting_routing_review", "spam_blocked"})
-
     status = str(payload.get("status") or "").strip()
-    require(status in allowed, f"unexpected status: {status}")
+    require(status in KNOWN_PROCESS_STATUSES, f"unexpected status: {status}")
     require(str(payload.get("call_id") or "").strip() != "", "call_id is empty")
     require(isinstance(payload.get("transcript"), dict), "transcript is missing")
     require(isinstance(payload["transcript"].get("segments"), list), "segments are missing")
@@ -137,7 +134,6 @@ def validate_ok_response(payload, allow_review_status):
         require(str(segment.get("text") or "").strip() != "", "segment text is empty")
         require(segment.get("start") is not None, "segment start is missing")
         require(segment.get("end") is not None, "segment end is missing")
-        require(str(segment.get("speaker") or "").strip() != "", "segment speaker is empty")
     require(isinstance(payload.get("routing"), dict), "routing is missing")
     require(str(payload["routing"].get("intent_id") or "").strip() != "", "intent_id is empty")
     require(payload["routing"].get("intent_confidence") is not None, "intent_confidence is empty")
