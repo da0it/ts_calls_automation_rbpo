@@ -51,6 +51,12 @@ func TestSimpleOneAdapterCreateTicketSendsPayloadAndBearer(t *testing.T) {
 	if gotPayload["title"] != "Обращение: misc.triage" {
 		t.Fatalf("unexpected title in payload: %#v", gotPayload["title"])
 	}
+	if gotPayload["intent_id"] != "misc.triage" {
+		t.Fatalf("unexpected intent_id in payload: %#v", gotPayload["intent_id"])
+	}
+	if gotPayload["assignee_id"] != "support" {
+		t.Fatalf("unexpected assignee_id in payload: %#v", gotPayload["assignee_id"])
+	}
 	if gotPayload["problem_summary"] != "Проблема: Клиент не может войти в личный кабинет." {
 		t.Fatalf("unexpected problem summary in payload: %#v", gotPayload["problem_summary"])
 	}

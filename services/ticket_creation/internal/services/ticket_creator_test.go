@@ -109,4 +109,77 @@ func (failingTicketAdapter) CreateTicket(payload *models.TicketSystemPayload) (*
 	return nil, errors.New("stop after draft")
 }
 
+type capturingTicketAdapter struct {
+	payload *models.TicketSystemPayload
+}
+
+func (a *capturingTicketAdapter) CreateTicket(payload *models.TicketSystemPayload) (*models.TicketCreated, error) {
+	a.payload = payload
+	return &models.TicketCreated{
+		TicketID:   "ticket-1",
+		ExternalID: "EXT-1",
+		URL:        "http://ticket.local/ticket-1",
+		System:     "simpleone",
+	}, nil
+}
+
+func TestCreateTicketBuildsDraftFromRoutingSummaryAndEntities(t *testing.T) {
+	t.Parallel()
+
+	adapter := &capturingTicketAdapter{}
+	service := NewTicketCreatorService(
+		nil,
+		staticSummarizer{},
+		adapter,
+		nil,
+		false,
+	)
+
+	created, err := service.CreateTicket(&models.CreateTicketRequest{
+		Transcript: models.TranscriptData{
+			CallID: "call-2",
+			Segments: []models.Segment{
+				{Speaker: "spk_0", Text: "Не приходит код подтверждения."},
+			},
+		},
+		Routing: models.RoutingData{
+			IntentID:         "portal_access",
+			IntentConfidence: 0.93,
+			Priority:         "high",
+			SuggestedGroup:   "support",
+		},
+		Entities: &models.Entities{
+			Phones: []models.ExtractedEntity{{Value: "+79991234567"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket returned error: %v", err)
+	}
+	if created == nil || created.System != "simpleone" {
+		t.Fatalf("unexpected created ticket: %#v", created)
+	}
+	if adapter.payload == nil {
+		t.Fatal("ticket adapter did not receive payload")
+	}
+	if adapter.payload.Draft == nil {
+		t.Fatal("draft is missing in payload")
+	}
+	if adapter.payload.Draft.Title != "Обращение: portal_access" {
+		t.Fatalf("unexpected draft title: %q", adapter.payload.Draft.Title)
+	}
+	if adapter.payload.Draft.AssigneeID != "support" {
+		t.Fatalf("unexpected assignee: %q", adapter.payload.Draft.AssigneeID)
+	}
+	if !strings.Contains(adapter.payload.Draft.Description, "Тестовое описание") {
+		t.Fatalf("unexpected draft description: %q", adapter.payload.Draft.Description)
+	}
+	if adapter.payload.Request.Routing.IntentID != "portal_access" {
+		t.Fatalf("unexpected routing intent in payload: %q", adapter.payload.Request.Routing.IntentID)
+	}
+	if adapter.payload.Request.Entities == nil || len(adapter.payload.Request.Entities.Phones) != 1 {
+		t.Fatalf("entities were not passed to payload: %#v", adapter.payload.Request.Entities)
+	}
+}
+
 var _ adapters.TicketSystemAdapter = failingTicketAdapter{}
+var _ adapters.TicketSystemAdapter = (*capturingTicketAdapter)(nil)

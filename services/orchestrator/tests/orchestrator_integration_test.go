@@ -328,3 +328,102 @@ func TestProcessCallIntegrationStopsOnLowConfidenceRouting(t *testing.T) {
 		t.Fatalf("ticket must be nil when routing review is required")
 	}
 }
+
+func TestProcessCallIntegrationContinuesWhenEntityExtractionFails(t *testing.T) {
+	transcriptionServer := &fakeTranscriptionServer{
+		response: &callprocessingv1.Transcript{
+			CallId: "call-003",
+			Segments: []*callprocessingv1.Segment{
+				{Start: 0, End: 2, Speaker: "spk_0", Text: "Не могу войти в систему."},
+			},
+		},
+	}
+	routingServer := &fakeRoutingServer{
+		response: &callprocessingv1.Routing{
+			IntentId:         "portal_access",
+			IntentConfidence: 0.96,
+			Priority:         "high",
+			SuggestedGroup:   "support",
+			SpamCheck: &callprocessingv1.SpamCheck{
+				Status:         "allow",
+				PredictedLabel: "not_spam",
+				Confidence:     0.99,
+			},
+		},
+	}
+	ticketServer := &fakeTicketServer{
+		response: &callprocessingv1.TicketCreated{
+			TicketId:   "ticket-003",
+			ExternalId: "EXT-003",
+			Url:        "http://ticket.local/ticket-003",
+			System:     "simpleone",
+			CreatedAt:  timestamppb.New(time.Now()),
+		},
+	}
+
+	entityCalls := 0
+	entityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entityCalls++
+		http.Error(w, "ner failed", http.StatusInternalServerError)
+	}))
+	defer entityServer.Close()
+
+	transcriptionAddr := startGRPCServer(t, func(server *grpc.Server) {
+		callprocessingv1.RegisterTranscriptionServiceServer(server, transcriptionServer)
+	})
+	routingAddr := startGRPCServer(t, func(server *grpc.Server) {
+		callprocessingv1.RegisterRoutingServiceServer(server, routingServer)
+	})
+	ticketAddr := startGRPCServer(t, func(server *grpc.Server) {
+		callprocessingv1.RegisterTicketServiceServer(server, ticketServer)
+	})
+
+	transcriptionClient, err := clients.NewTranscriptionClient(transcriptionAddr)
+	if err != nil {
+		t.Fatalf("new transcription client: %v", err)
+	}
+	defer transcriptionClient.Close()
+
+	routingClient, err := clients.NewRoutingClient(routingAddr)
+	if err != nil {
+		t.Fatalf("new routing client: %v", err)
+	}
+	defer routingClient.Close()
+
+	ticketClient, err := clients.NewTicketClient(ticketAddr, 10*time.Second)
+	if err != nil {
+		t.Fatalf("new ticket client: %v", err)
+	}
+	defer ticketClient.Close()
+
+	service := services.NewOrchestratorService(
+		transcriptionClient,
+		routingClient,
+		ticketClient,
+		clients.NewEntityClient(entityServer.URL),
+		0.5,
+	)
+
+	result, err := service.ProcessCall(writeAudioFile(t))
+	if err != nil {
+		t.Fatalf("process call: %v", err)
+	}
+	if result.Status != services.ProcessStatusCompleted {
+		t.Fatalf("expected status %q, got %q", services.ProcessStatusCompleted, result.Status)
+	}
+	if entityCalls != 1 {
+		t.Fatalf("expected 1 entity extraction call, got %d", entityCalls)
+	}
+	if ticketServer.count() != 1 {
+		t.Fatalf("expected 1 ticket call, got %d", ticketServer.count())
+	}
+	if result.Entities == nil {
+		t.Fatal("entities must not be nil on non-fatal extraction failure")
+	}
+	if len(result.Entities.Phones) != 0 || len(result.Entities.OrderIDs) != 0 {
+		t.Fatalf("entities should fall back to empty lists, got %#v", result.Entities)
+	}
+	if result.Ticket == nil || result.Ticket.TicketID == "" {
+		t.Fatalf("ticket should still be created, got %#v", result.Ticket)
+	}
+}

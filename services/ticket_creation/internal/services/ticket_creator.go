@@ -82,9 +82,11 @@ func (s *TicketCreatorService) CreateTicket(req *models.CreateTicketRequest) (*m
 	log.Printf("Created ticket in external system: %s (%s)", created.ExternalID, created.System)
 
 	// 5. Сохраняем в БД
-	if err := s.repository.CreateTicket(draft, created); err != nil {
-		// Логируем ошибку, но не фейлим весь процесс
-		log.Printf("Warning: Failed to save ticket to DB: %v", err)
+	if s.repository != nil {
+		if err := s.repository.CreateTicket(draft, created); err != nil {
+			// Логируем ошибку, но не фейлим весь процесс
+			log.Printf("Warning: Failed to save ticket to DB: %v", err)
+		}
 	}
 
 	log.Printf("Ticket created successfully: %s", created.TicketID)

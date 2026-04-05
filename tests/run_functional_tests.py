@@ -13,6 +13,16 @@ from pathlib import Path
 
 
 ALLOWED_AUDIO = {".mp3", ".wav", ".ogg", ".m4a", ".flac"}
+REQUIRED_AUDIO_FOR_FULL_COVERAGE = {".mp3", ".wav", ".ogg"}
+ENTITY_KEYS = [
+    "persons",
+    "phones",
+    "emails",
+    "order_ids",
+    "account_ids",
+    "money_amounts",
+    "dates",
+]
 
 
 def request_json(url, method="GET", payload=None, headers=None, timeout=60):
@@ -100,6 +110,17 @@ def add_result(results, code, title, status, note="", details=None):
     print(text)
 
 
+def get_result_status(results, code):
+    for item in results:
+        if item["id"] == code:
+            return item["status"]
+    return ""
+
+
+def mark_requirement(results, code, title, ok, note="", details=None):
+    add_result(results, code, title, "passed" if ok else "failed", note, details)
+
+
 def validate_ok_response(payload, allow_review_status):
     allowed = {"completed"}
     if allow_review_status:
@@ -111,20 +132,32 @@ def validate_ok_response(payload, allow_review_status):
     require(isinstance(payload.get("transcript"), dict), "transcript is missing")
     require(isinstance(payload["transcript"].get("segments"), list), "segments are missing")
     require(len(payload["transcript"]["segments"]) > 0, "segments are empty")
+    for segment in payload["transcript"]["segments"][:3]:
+        require(isinstance(segment, dict), "segment must be an object")
+        require(str(segment.get("text") or "").strip() != "", "segment text is empty")
+        require(segment.get("start") is not None, "segment start is missing")
+        require(segment.get("end") is not None, "segment end is missing")
+        require(str(segment.get("speaker") or "").strip() != "", "segment speaker is empty")
     require(isinstance(payload.get("routing"), dict), "routing is missing")
     require(str(payload["routing"].get("intent_id") or "").strip() != "", "intent_id is empty")
+    require(payload["routing"].get("intent_confidence") is not None, "intent_confidence is empty")
     require(str(payload["routing"].get("priority") or "").strip() != "", "priority is empty")
+    require(str(payload["routing"].get("suggested_group") or "").strip() != "", "suggested_group is empty")
     require(isinstance(payload.get("processing_time"), dict), "processing_time is missing")
     require(payload["processing_time"].get("transcription") is not None, "transcription time is missing")
     require(payload["processing_time"].get("routing") is not None, "routing time is missing")
     require(isinstance(payload.get("entities"), dict), "entities are missing")
+    for key in ENTITY_KEYS:
+        require(isinstance(payload["entities"].get(key), list), f"entities.{key} is missing")
 
     return {
         "status": status,
         "call_id": str(payload.get("call_id") or ""),
         "queue_id": str(payload.get("queue_id") or ""),
         "intent_id": str(payload["routing"].get("intent_id") or ""),
+        "intent_confidence": float(payload["routing"].get("intent_confidence") or 0.0),
         "priority": str(payload["routing"].get("priority") or ""),
+        "suggested_group": str(payload["routing"].get("suggested_group") or ""),
     }
 
 
@@ -162,6 +195,9 @@ def main():
     results = []
     good_calls = []
     admin_headers = {}
+    operator_headers = {}
+    queue_snapshot = None
+    audit_snapshot = None
 
     def run(code, title, fn):
         try:
@@ -214,6 +250,51 @@ def main():
         finally:
             tmp_path.unlink(missing_ok=True)
 
+    def ensure_operator():
+        nonlocal operator_headers
+        username = args.operator_username.strip()
+        password = args.operator_password.strip()
+
+        if not username or not password:
+            username = f"operator_{uuid.uuid4().hex[:10]}"
+            password = f"pass_{uuid.uuid4().hex[:10]}"
+            status, body = request_json(
+                f"{base_url}/api/v1/users",
+                "POST",
+                {"username": username, "password": password, "role": "operator"},
+                headers=admin_headers,
+            )
+            require(status == 201, f"expected 201, got {status}")
+            require(str(body.get("role") or "") == "operator", "created user role is not operator")
+
+        status, body = request_json(
+            f"{base_url}/api/v1/auth/login",
+            "POST",
+            {"username": username, "password": password},
+        )
+        require(status == 200, f"expected 200, got {status}")
+        require(str(body.get("token") or "").strip() != "", "operator token is missing")
+        require(isinstance(body.get("user"), dict), "operator user is missing")
+        require(str(body["user"].get("role") or "") == "operator", "operator role is wrong")
+        operator_headers = {"Authorization": f"Bearer {body['token']}"}
+        return {"username": username}
+
+    def test_operator_process_access():
+        ensure_operator()
+        status, body = request_json(
+            f"{base_url}/api/v1/process-call",
+            "POST",
+            headers={**operator_headers, "Content-Type": "multipart/form-data; boundary=empty"},
+        )
+        require(status == 400, f"expected 400, got {status}")
+        require(str(body.get("error") or "") == "audio file is required", "wrong error text")
+
+    def test_operator_forbidden():
+        ensure_operator()
+        status, body = request_json(f"{base_url}/api/v1/audit/events", headers=operator_headers)
+        require(status == 403, f"expected 403, got {status}")
+        require(str(body.get("error") or "") == "forbidden", "wrong error text")
+
     run("T1", "Admin login", test_admin_login)
     run("T2", "Check current user", test_me)
     run("T3", "Request without token", test_no_token)
@@ -233,6 +314,7 @@ def main():
             info = validate_ok_response(body, args.allow_review_status)
             info["request_id"] = request_id
             info["payload"] = body
+            info["audio_ext"] = audio_path.suffix.lower()
             good_calls.append(info)
             add_result(results, f"T{5 + index}", f"Process {audio_path.suffix.lower()} file", "passed", details=info)
         except Exception as exc:
@@ -273,6 +355,11 @@ def main():
         require(found is not None, "processed call was not found in shared queue")
         require(str(found.get("callId") or "").strip() == queue_call["call_id"], "wrong call id in shared queue")
         require(str(found.get("status") or "").strip() == queue_call["status"], "wrong status in shared queue")
+        require(isinstance(found.get("raw"), dict), "raw processing report is missing in shared queue")
+        require(isinstance(found["raw"].get("routing"), dict), "raw routing is missing in shared queue")
+        require(isinstance(found["raw"].get("transcript"), dict), "raw transcript is missing in shared queue")
+        require(isinstance(found.get("spamCheck"), dict), "spamCheck is missing in shared queue")
+        queue_snapshot = found
         add_result(results, "T21", "Shared call queue", "passed", details={"queue_id": queue_call["queue_id"]})
     except Exception as exc:
         add_result(results, "T21", "Shared call queue", "failed", str(exc))
@@ -285,29 +372,114 @@ def main():
         )
         require(status == 200, f"expected 200, got {status}")
         require(isinstance(body.get("events"), list), "events are missing")
-        found = any(str(item.get("request_id") or "") == good_calls[0]["request_id"] for item in body["events"] if isinstance(item, dict))
-        require(found, "request was not found in audit")
+        found = None
+        for item in body["events"]:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("request_id") or "") == good_calls[0]["request_id"]:
+                found = item
+                break
+        require(found is not None, "request was not found in audit")
+        require(isinstance(found.get("details"), dict), "audit details are missing")
+        audit_snapshot = found
         add_result(results, "T22", "Audit log", "passed")
     except Exception as exc:
         add_result(results, "T22", "Audit log", "failed", str(exc))
 
-    if args.operator_username and args.operator_password:
-        try:
-            status, body = request_json(
-                f"{base_url}/api/v1/auth/login",
-                "POST",
-                {"username": args.operator_username, "password": args.operator_password},
-            )
-            require(status == 200, f"expected 200, got {status}")
-            headers = {"Authorization": f"Bearer {body['token']}"}
-            status, body = request_json(f"{base_url}/api/v1/audit/events", headers=headers)
-            require(status == 403, f"expected 403, got {status}")
-            require(str(body.get("error") or "") == "forbidden", "wrong error text")
-            add_result(results, "T23", "Operator has no admin access", "passed")
-        except Exception as exc:
-            add_result(results, "T23", "Operator has no admin access", "failed", str(exc))
+    run("T23", "Operator can access process endpoint", test_operator_process_access)
+    run("T24", "Operator has no admin access", test_operator_forbidden)
+
+    if completed_call is None:
+        add_result(results, "T25", "Notification handoff to external ticket system", "skipped", "no completed call")
     else:
-        add_result(results, "T23", "Operator has no admin access", "skipped", "operator credentials were not provided")
+        try:
+            routing = completed_call["payload"].get("routing") or {}
+            ticket = completed_call["payload"].get("ticket") or {}
+            require(str(routing.get("suggested_group") or "").strip() != "", "suggested_group is empty")
+            require(str(ticket.get("system") or "").strip() != "", "ticket system is empty")
+            require(
+                str(ticket.get("external_id") or ticket.get("ticket_id") or "").strip() != "",
+                "ticket external id is empty",
+            )
+            add_result(
+                results,
+                "T25",
+                "Notification handoff to external ticket system",
+                "passed",
+                details={"group": routing.get("suggested_group"), "system": ticket.get("system")},
+            )
+        except Exception as exc:
+            add_result(results, "T25", "Notification handoff to external ticket system", "failed", str(exc))
+
+    processed_exts = {item["audio_ext"] for item in good_calls}
+    missing_required_exts = sorted(REQUIRED_AUDIO_FOR_FULL_COVERAGE - processed_exts)
+    mark_requirement(
+        results,
+        "T30",
+        "Requirement 1: Intake, validation and persistence",
+        get_result_status(results, "T1") == "passed"
+        and get_result_status(results, "T3") == "passed"
+        and get_result_status(results, "T4") == "passed"
+        and get_result_status(results, "T5") == "passed"
+        and get_result_status(results, "T21") == "passed"
+        and not missing_required_exts,
+        "" if not missing_required_exts else f"full format coverage still needs: {', '.join(missing_required_exts)}",
+        {"processed_formats": sorted(processed_exts)},
+    )
+    mark_requirement(
+        results,
+        "T31",
+        "Requirement 2: Transcription and structured transcript",
+        bool(good_calls),
+        "",
+        {"calls_checked": len(good_calls)},
+    )
+    mark_requirement(
+        results,
+        "T32",
+        "Requirement 3: Intent, confidence, priority, routing and entities",
+        bool(good_calls)
+        and all(item["intent_id"] and item["suggested_group"] for item in good_calls),
+        "",
+        {"sample_intent": good_calls[0]["intent_id"] if good_calls else ""},
+    )
+    mark_requirement(
+        results,
+        "T33",
+        "Requirement 4: Ticket registration in external system",
+        get_result_status(results, "T20") == "passed",
+        "need at least one completed call with created ticket" if get_result_status(results, "T20") != "passed" else "",
+    )
+    mark_requirement(
+        results,
+        "T34",
+        "Requirement 5: Notification handoff to responsible side",
+        get_result_status(results, "T25") == "passed",
+        "current architecture delegates notifications to the linked ticket system"
+        if get_result_status(results, "T25") != "passed"
+        else "",
+    )
+    mark_requirement(
+        results,
+        "T35",
+        "Detailed requirements: Storage and audit",
+        get_result_status(results, "T21") == "passed"
+        and get_result_status(results, "T22") == "passed"
+        and isinstance(queue_snapshot, dict)
+        and isinstance(audit_snapshot, dict)
+        and isinstance((audit_snapshot or {}).get("details"), dict),
+        "",
+    )
+    mark_requirement(
+        results,
+        "T36",
+        "Detailed requirements: Security and role model",
+        get_result_status(results, "T1") == "passed"
+        and get_result_status(results, "T3") == "passed"
+        and get_result_status(results, "T23") == "passed"
+        and get_result_status(results, "T24") == "passed",
+        "",
+    )
 
     summary = {
         "total": len(results),
@@ -315,11 +487,17 @@ def main():
         "failed": sum(1 for x in results if x["status"] == "failed"),
         "skipped": sum(1 for x in results if x["status"] == "skipped"),
     }
+    requirements = [
+        x
+        for x in results
+        if x["id"] in {"T30", "T31", "T32", "T33", "T34", "T35", "T36"}
+    ]
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "base_url": base_url,
         "audio_files": [str(x) for x in audio_files],
         "summary": summary,
+        "requirements": requirements,
         "results": results,
     }
 
