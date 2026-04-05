@@ -279,6 +279,9 @@ def serve() -> None:
     spam_gate_score_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_THRESHOLD")
     spam_gate_score_allow_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_ALLOW_THRESHOLD")
     spam_gate_positive_label = os.getenv("ROUTER_SPAM_GATE_POSITIVE_LABEL", "spam").strip() or "spam"
+    spam_rescue_enabled = os.getenv("ROUTER_SPAM_RESCUE_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+    spam_rescue_min_confidence = float(os.getenv("ROUTER_SPAM_RESCUE_MIN_CONFIDENCE", "0.45"))
+    spam_rescue_block_min_confidence = float(os.getenv("ROUTER_SPAM_RESCUE_BLOCK_MIN_CONFIDENCE", "0.60"))
 
     intents = load_intents(intents_path)
     logger.info("loaded intents config from %s (%d intents)", intents_path, len(intents))
@@ -304,6 +307,9 @@ def serve() -> None:
         spam_gate_score_threshold=spam_gate_score_threshold,
         spam_gate_score_allow_threshold=spam_gate_score_allow_threshold,
         spam_gate_positive_label=spam_gate_positive_label,
+        spam_rescue_enabled=spam_rescue_enabled,
+        spam_rescue_min_confidence=spam_rescue_min_confidence,
+        spam_rescue_block_min_confidence=spam_rescue_block_min_confidence,
     )
 
     routing_service = RoutingService(
