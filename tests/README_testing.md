@@ -61,3 +61,10 @@ cd services/ticket_creation && go test ./...
 python3 tests/evaluate_ab_test.py \
   --csv /absolute/path/to/secure_labeling_dataset.csv
 ```
+
+```bash
+BASE_URL=http://localhost:8000 \
+USERNAME=admin \
+PASSWORD='YOUR_PASSWORD' \
+./scripts/run_load_test_from_folder.sh /absolute/path/to/audio_folder ./load_test_results
+```
