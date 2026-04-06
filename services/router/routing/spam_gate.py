@@ -139,37 +139,31 @@ class SpamGateRuntime:
         if spam_meta.get("skipped"):
             reason = "skip_spam_gate_requested"
         elif spam_meta.get("active"):
-            if raw_score is not None and score_threshold_high is not None:
-                if predicted_label == positive_label and raw_score >= score_threshold_high:
+            if predicted_label == positive_label:
+                if raw_score is not None and score_threshold_high is not None and raw_score >= score_threshold_high:
                     status = "block"
                     reason = f"positive_score>={score_threshold_high:.3f}"
-                elif score_threshold_low is not None and raw_score <= score_threshold_low:
-                    status = "allow"
-                    reason = f"positive_score<={score_threshold_low:.3f}"
-                elif confidence <= threshold_low:
-                    status = "allow"
-                    reason = f"positive_confidence<={threshold_low:.3f}"
+                elif confidence >= threshold_high:
+                    status = "block"
+                    reason = f"positive_confidence>={threshold_high:.3f}"
                 else:
                     status = "review"
-                    if score_threshold_low is None:
-                        reason = (
-                            f"manual_review_required:score<{score_threshold_high:.3f}"
-                            f",confidence>{threshold_low:.3f}"
-                        )
+                    if raw_score is not None and score_threshold_high is not None:
+                        reason = f"manual_review_required:predicted_spam_score<{score_threshold_high:.3f}"
                     else:
-                        reason = (
-                            f"manual_review_required:{score_threshold_low:.3f}"
-                            f"<{raw_score:.3f}<{score_threshold_high:.3f}"
-                        )
-            elif predicted_label == positive_label and confidence >= threshold_high:
-                status = "block"
-                reason = f"positive_confidence>={threshold_high:.3f}"
+                        reason = f"manual_review_required:predicted_spam_confidence<{threshold_high:.3f}"
+            elif raw_score is not None and score_threshold_low is not None and raw_score <= score_threshold_low:
+                status = "allow"
+                reason = f"positive_score<={score_threshold_low:.3f}"
             elif confidence <= threshold_low:
                 status = "allow"
                 reason = f"positive_confidence<={threshold_low:.3f}"
             else:
                 status = "review"
-                reason = f"manual_review_required:{threshold_low:.3f}<{confidence:.3f}<{threshold_high:.3f}"
+                if raw_score is not None and score_threshold_low is not None:
+                    reason = f"manual_review_required:positive_score>{score_threshold_low:.3f}"
+                else:
+                    reason = f"manual_review_required:{threshold_low:.3f}<{confidence:.3f}<{threshold_high:.3f}"
 
         return {
             "status": status,

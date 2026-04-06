@@ -13,6 +13,7 @@ try:
     from routing.ai_analyzer import RubertEmbeddingAnalyzer
     from routing.models import CallInput, Segment
     from routing.nlp_preprocess import PreprocessConfig
+    from routing.spam_gate import SpamGateRuntime
 
     _ROUTER_TESTS_AVAILABLE = True
 except Exception:
@@ -20,6 +21,7 @@ except Exception:
     CallInput = None
     Segment = None
     PreprocessConfig = None
+    SpamGateRuntime = None
     _ROUTER_TESTS_AVAILABLE = False
 
 
@@ -108,6 +110,32 @@ class RouterSpamGateTest(unittest.TestCase):
 
         self.assertEqual(result.intent.intent_id, "spam.call")
         self.assertEqual(result.raw["spam_decision"]["status"], "review")
+
+    def test_predicted_spam_below_allow_threshold_still_requires_review(self) -> None:
+        gate = SpamGateRuntime(
+            enabled=True,
+            model_path="",
+            artifact_path="",
+            threshold=0.85,
+            allow_threshold=0.60,
+            score_threshold=None,
+            score_allow_threshold=None,
+            positive_label="spam",
+        )
+
+        decision = gate.build_decision(
+            {
+                "active": True,
+                "predicted_label": "spam",
+                "positive_label": "spam",
+                "positive_confidence": 0.55,
+                "threshold": 0.85,
+                "allow_threshold": 0.60,
+                "backend": "sklearn_tfidf",
+            }
+        )
+
+        self.assertEqual(decision["status"], "review")
 
 
 if __name__ == "__main__":
