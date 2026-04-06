@@ -217,6 +217,7 @@ def parse_args():
     parser.add_argument("--username", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--timeout", type=int, default=3600)
+    parser.add_argument("--row-id", type=int, action="append", default=[], help="Only process selected 1-based CSV row(s). Can be repeated.")
     parser.add_argument("--out-csv", default="")
     parser.add_argument("--out-json", default="")
     return parser.parse_args()
@@ -261,14 +262,18 @@ def main():
 
     results = []
     csv_dir = csv_path.parent
+    selected_rows = set(int(x) for x in args.row_id if int(x) > 0)
 
     for idx, row in enumerate(rows, start=1):
+        if selected_rows and idx not in selected_rows:
+            continue
         gold = clean(row.get("call_purpose"))
         gold_binary = "spam" if gold.lower() == "spam" else "non_spam"
         audio_path = find_audio_path(row, csv_dir, audio_dir, index)
 
         item = {
             "row_id": idx,
+            "request_id": "",
             "filename": clean(row.get("filename")),
             "audio_path": str(audio_path) if audio_path else "",
             "gold_call_purpose": gold,
@@ -287,6 +292,7 @@ def main():
             "binary_match": "",
             "intent_match_nonspam": "",
             "error": "",
+            "error_details": "",
         }
 
         if audio_path is None:
@@ -297,6 +303,7 @@ def main():
 
         try:
             request_id = f"dataset-{uuid.uuid4().hex}"
+            item["request_id"] = request_id
             status, payload = upload_file(
                 f"{base_url}/api/v1/process-call",
                 audio_path,
@@ -306,8 +313,12 @@ def main():
             item["http_status"] = status
             if status != 200:
                 item["error"] = f"http_{status}"
+                item["error_details"] = clean(payload.get("error") or payload.get("details") or payload.get("raw") or payload)
                 results.append(item)
-                print(f"[FAIL] row {idx}: http {status}")
+                print(
+                    f"[FAIL] row {idx}: http {status} "
+                    f"request_id={request_id} details={item['error_details'] or '-'}"
+                )
                 continue
 
             routing = payload.get("routing") or {}
@@ -335,6 +346,7 @@ def main():
             )
         except Exception as exc:
             item["error"] = str(exc)
+            item["error_details"] = str(exc)
             results.append(item)
             print(f"[FAIL] row {idx}: {exc}")
 
@@ -352,6 +364,7 @@ def main():
 
     fieldnames = list(rows[0].keys()) + [
         "row_id",
+        "request_id",
         "audio_path",
         "gold_call_purpose",
         "gold_binary",
@@ -369,6 +382,7 @@ def main():
         "binary_match",
         "intent_match_nonspam",
         "error",
+        "error_details",
     ]
     fieldnames = list(dict.fromkeys(fieldnames))
 
