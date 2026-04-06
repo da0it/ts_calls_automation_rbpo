@@ -64,6 +64,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         spam_gate_score_threshold: Optional[float] = None,
         spam_gate_score_allow_threshold: Optional[float] = None,
         spam_gate_positive_label: str = RESERVED_SPAM_INTENT_ID,
+        spam_conflict_review_min_confidence: float = 0.98,
         **_: Any,
     ):
         self.model_name = str(model_name).strip() or "ai-forever/ruBert-base"
@@ -96,6 +97,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         self.spam_gate_threshold = float(max(0.0, min(1.0, spam_gate_threshold)))
         self.spam_gate_allow_threshold = float(max(0.0, min(self.spam_gate_threshold, spam_gate_allow_threshold)))
         self.spam_gate_positive_label = str(spam_gate_positive_label or RESERVED_SPAM_INTENT_ID).strip() or RESERVED_SPAM_INTENT_ID
+        self.spam_conflict_review_min_confidence = float(max(0.0, min(1.0, spam_conflict_review_min_confidence)))
 
         self._spam_gate = SpamGateRuntime(
             enabled=self.spam_gate_enabled,
@@ -133,6 +135,19 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
 
         spam_meta = self._spam_gate.predict(text, skip=skip_spam_gate)
         spam_decision = self._spam_gate.build_decision(spam_meta)
+        if spam_decision["status"] in {"block", "review"}:
+            conflict_review = self._try_spam_conflict_review(
+                text=text,
+                allowed_intents=allowed_intents,
+                runtime_intent_ids=runtime_intent_ids,
+                spam_meta=spam_meta,
+                spam_decision=spam_decision,
+                processing_time_ms=(time.time() - started) * 1000.0,
+                text_len=len(text),
+                prep_meta=prep.meta,
+            )
+            if conflict_review is not None:
+                return conflict_review
         if spam_decision["status"] == "block":
             return self._spam_result(
                 spam_meta=spam_meta,
@@ -221,6 +236,76 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             confidence,
         )
         return analysis
+
+    def _try_spam_conflict_review(
+        self,
+        *,
+        text: str,
+        allowed_intents: Dict[str, Dict[str, Any]],
+        runtime_intent_ids: list[str],
+        spam_meta: Dict[str, Any],
+        spam_decision: Dict[str, Any],
+        processing_time_ms: float,
+        text_len: int,
+        prep_meta: Dict[str, Any],
+    ) -> Optional[AIAnalysis]:
+        if not runtime_intent_ids:
+            return None
+
+        probs, meta = self._finetuned_router.predict(text, runtime_intent_ids)
+        if probs is None:
+            return None
+
+        intent_ids = list(meta.get("intent_ids") or runtime_intent_ids)
+        best_idx = int(torch.argmax(probs).item())
+        best_intent_id = intent_ids[best_idx]
+        confidence = float(probs[best_idx].item())
+        if confidence < self.spam_conflict_review_min_confidence:
+            return None
+
+        top_k = min(3, len(intent_ids))
+        top_indices = torch.topk(probs, k=top_k).indices.tolist()
+        top3_intents = [{"intent": intent_ids[int(i)], "score": float(probs[int(i)].item())} for i in top_indices]
+        meta_intent = allowed_intents.get(best_intent_id, {})
+        priority = self._normalize_priority(meta_intent.get("priority", "medium"))
+        default_group = str(meta_intent.get("default_group") or "").strip()
+        targets = [{"type": "group", "id": default_group, "confidence": confidence}] if default_group else []
+
+        conflict_spam_decision = dict(spam_decision)
+        conflict_spam_decision["status"] = "review"
+        conflict_spam_decision["reason"] = (
+            f"spam_nonspam_conflict:{best_intent_id}:{confidence:.3f}:from_{spam_decision.get('status', 'unknown')}"
+        )
+
+        logger.info(
+            "Spam/non-spam conflict routed to manual review intent=%s conf=%.3f source_status=%s",
+            best_intent_id,
+            confidence,
+            spam_decision.get("status"),
+        )
+
+        return AIAnalysis(
+            intent=IntentResult(
+                intent_id=best_intent_id,
+                confidence=confidence,
+                evidence=[],
+                notes=f"spam_nonspam_conflict_review_required:{confidence:.3f}",
+            ),
+            priority=priority,
+            suggested_targets=targets,
+            raw={
+                "mode": "finetuned_spam_conflict_review",
+                "model_version": self.model_name,
+                "device": self.device,
+                "processing_time_ms": round(processing_time_ms, 2),
+                "text_length": text_len,
+                "prep_meta": prep_meta,
+                "top3_intents": top3_intents,
+                "spam_gate": spam_meta,
+                "spam_decision": conflict_spam_decision,
+                "finetuned_model": meta,
+            },
+        )
 
     def get_training_status(self, allowed_intents: Optional[Dict[str, Dict]] = None) -> Dict[str, Any]:
         current_intents = self._stage2_runtime_intent_ids(allowed_intents or {}) if allowed_intents else None

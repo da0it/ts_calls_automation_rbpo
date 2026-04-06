@@ -58,6 +58,23 @@ class _FakeSpamGate:
         return None
 
 
+class _FakeFinetunedRouter:
+    def __init__(self, probs, intent_ids: list[str]) -> None:
+        self.probs = probs
+        self.intent_ids = intent_ids
+
+    def predict(self, text: str, runtime_intent_ids: list[str]):
+        if self.probs is None:
+            return None, {"active": False, "reason": "fake_unavailable"}
+        return self.probs, {"active": True, "intent_ids": self.intent_ids}
+
+    def status(self, *, current_intents=None):
+        return {"active": True}
+
+    def reload_from_disk(self):
+        return None
+
+
 @unittest.skipUnless(_ROUTER_TESTS_AVAILABLE, "router ML dependencies are not installed")
 class RouterSpamGateTest(unittest.TestCase):
     def _make_analyzer(self) -> RubertEmbeddingAnalyzer:
@@ -136,6 +153,27 @@ class RouterSpamGateTest(unittest.TestCase):
         )
 
         self.assertEqual(decision["status"], "review")
+
+    def test_high_confidence_nonspam_conflict_goes_to_review(self) -> None:
+        analyzer = self._make_analyzer()
+        analyzer._spam_gate = _FakeSpamGate(status="block", confidence=0.92)
+        analyzer._finetuned_router = _FakeFinetunedRouter(
+            probs=torch.tensor([0.99, 0.01], dtype=torch.float32),
+            intent_ids=["consulting", "portal_access"],
+        )
+
+        allowed_intents = {
+            "spam.call": {"default_group": "support", "priority": "high"},
+            "consulting": {"default_group": "consulting", "priority": "medium"},
+            "portal_access": {"default_group": "support", "priority": "high"},
+            "misc.triage": {"default_group": "support", "priority": "medium"},
+        }
+
+        result = analyzer.analyze(self._call(), allowed_intents)
+
+        self.assertEqual(result.intent.intent_id, "consulting")
+        self.assertEqual(result.raw["spam_decision"]["status"], "review")
+        self.assertIn("spam_nonspam_conflict:", result.raw["spam_decision"]["reason"])
 
 
 if __name__ == "__main__":

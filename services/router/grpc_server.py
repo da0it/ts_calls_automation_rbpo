@@ -279,6 +279,7 @@ def serve() -> None:
     spam_gate_score_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_THRESHOLD")
     spam_gate_score_allow_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_ALLOW_THRESHOLD")
     spam_gate_positive_label = os.getenv("ROUTER_SPAM_GATE_POSITIVE_LABEL", "spam").strip() or "spam"
+    spam_conflict_review_min_confidence = float(os.getenv("ROUTER_SPAM_CONFLICT_REVIEW_MIN_CONFIDENCE", "0.98"))
     intents = load_intents(intents_path)
     logger.info("loaded intents config from %s (%d intents)", intents_path, len(intents))
     analyzer = RubertEmbeddingAnalyzer(
@@ -303,6 +304,7 @@ def serve() -> None:
         spam_gate_score_threshold=spam_gate_score_threshold,
         spam_gate_score_allow_threshold=spam_gate_score_allow_threshold,
         spam_gate_positive_label=spam_gate_positive_label,
+        spam_conflict_review_min_confidence=spam_conflict_review_min_confidence,
     )
 
     routing_service = RoutingService(

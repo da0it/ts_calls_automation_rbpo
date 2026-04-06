@@ -123,6 +123,16 @@ func isSpamBlocked(spamCheck *clients.SpamCheckResponse) bool {
 	return spamCheck.Status == "block" || spamCheck.Status == "review"
 }
 
+func isSpamConflictReview(spamCheck *clients.SpamCheckResponse) bool {
+	if spamCheck == nil {
+		return false
+	}
+	if spamCheck.Status != "review" {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(spamCheck.Reason), "spam_nonspam_conflict:")
+}
+
 func isRoutingReviewRequired(routing *clients.RoutingResponse, threshold float64) bool {
 	if routing == nil || threshold <= 0.0 {
 		return false
@@ -236,6 +246,25 @@ func (s *OrchestratorService) ProcessCall(audioPath string) (*ProcessCallResult,
 	log.Printf("✓ Routing completed in %.2fs (intent: %s, priority: %s)",
 		processingTime["routing"], routing.IntentID, routing.Priority)
 
+	if isSpamConflictReview(routing.SpamCheck) {
+		totalTime := time.Since(startTime).Seconds()
+		log.Printf(
+			"Call processing paused for manual routing review due to spam/non-spam conflict in %.2fs (intent=%s confidence=%.3f)",
+			totalTime,
+			routing.IntentID,
+			routing.IntentConfidence,
+		)
+		return &ProcessCallResult{
+			CallID:         transcript.CallID,
+			Status:         ProcessStatusAwaitingRoutingReview,
+			Transcript:     transcript,
+			Routing:        routing,
+			SpamCheck:      cloneSpamCheck(routing.SpamCheck),
+			Entities:       emptyEntities(),
+			ProcessingTime: processingTime,
+			TotalTime:      totalTime,
+		}, nil
+	}
 	if isSpamBlocked(routing.SpamCheck) {
 		totalTime := time.Since(startTime).Seconds()
 		log.Printf("Call blocked by spam gate in %.2fs", totalTime)
