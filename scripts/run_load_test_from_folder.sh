@@ -24,6 +24,7 @@ USERNAME="${USERNAME:-admin}"
 PASSWORD="${PASSWORD:-admin123}"
 
 mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
 mapfile -d '' FILES < <(find "$AUDIO_DIR" -type f \( -iname '*.wav' -o -iname '*.mp3' -o -iname '*.ogg' -o -iname '*.m4a' \) -print0 | sort -z)
 
