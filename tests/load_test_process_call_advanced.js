@@ -65,19 +65,30 @@ function buildScenario() {
 }
 
 function parseAudioFixtures() {
-  const raw = env('AUDIO_FILES');
-  if (!raw) {
-    throw new Error('Set AUDIO_FILES to one or more comma-separated audio paths.');
+  const listPath = env('AUDIO_FILE_LIST');
+  let paths = [];
+
+  if (listPath) {
+    paths = open(listPath)
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  } else {
+    const raw = env('AUDIO_FILES');
+    if (!raw) {
+      throw new Error('Set AUDIO_FILE_LIST or AUDIO_FILES to point to one or more audio paths.');
+    }
+    paths = raw
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
-  return raw
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((path) => ({
-      path,
-      name: path.split('/').pop() || 'audio.wav',
-      bytes: open(path, 'b'),
-    }));
+
+  return paths.map((path) => ({
+    path,
+    name: path.split('/').pop() || 'audio.wav',
+    bytes: open(path, 'b'),
+  }));
 }
 
 function safeJson(response) {

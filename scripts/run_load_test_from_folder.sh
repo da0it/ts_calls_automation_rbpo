@@ -45,10 +45,13 @@ echo "Audio files: ${#FILES[@]}"
 echo "Base URL: $BASE_URL"
 echo "Output dir: $OUT_DIR"
 
+AUDIO_LIST_FILE="$OUT_DIR/audio_files.txt"
+printf '%s\n' "${FILES[@]}" > "$AUDIO_LIST_FILE"
+
 BASE_URL="$BASE_URL" \
 USERNAME="$USERNAME" \
 PASSWORD="$PASSWORD" \
-AUDIO_FILES="$AUDIO_FILES" \
+AUDIO_FILE_LIST="$AUDIO_LIST_FILE" \
 SUMMARY_JSON="$OUT_DIR/summary.json" \
 SUMMARY_TEXT="$OUT_DIR/summary.txt" \
 k6 run tests/load_test_process_call_advanced.js | tee "$OUT_DIR/k6.log"

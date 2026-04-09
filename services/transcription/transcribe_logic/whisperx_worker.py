@@ -10,16 +10,13 @@ try:
 except ImportError:
     from config import get_whisperx_settings
 
-
 UNKNOWN_SPEAKER = ""
-
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
-
 
 def _maybe_assign_diarization_speakers(
     whisperx: Any,
@@ -58,7 +55,6 @@ def _maybe_assign_diarization_speakers(
     )
     return assign_word_speakers(diarize_segments, result)
 
-
 def _to_segments(result: Dict[str, Any]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for seg in result.get("segments", []):
@@ -75,7 +71,6 @@ def _to_segments(result: Dict[str, Any]) -> List[Dict[str, Any]]:
         )
 
     return out
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -128,7 +123,6 @@ def main() -> None:
     segments = _to_segments(result)
     with open(args.out_json, "w", encoding="utf-8") as f:
         json.dump({"segments": segments, "language": result.get("language", "")}, f, ensure_ascii=False)
-
 
 if __name__ == "__main__":
     main()

@@ -99,7 +99,7 @@ def detect_silences(
 
     with tempfile.TemporaryDirectory() as td:
         seg = os.path.join(td, "seg.wav")
-        # без pad: нам нужна честная тишина в окне
+
         _run([
             FFMPEG_BIN, "-y", "-i", wav_path,
             "-ss", f"{start}", "-to", f"{end}",

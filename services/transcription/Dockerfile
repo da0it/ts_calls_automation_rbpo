@@ -16,10 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Service code
 COPY . /app
 
-# WhisperX runtime in isolated venv
+# Запуск whisperx в отдельном виртуальном окружении (необходимо для избежания конфликтов зависимостей с библиотекой pytorch)
 RUN python -m venv /opt/whisperx_venv \
     && /opt/whisperx_venv/bin/pip install --no-cache-dir --upgrade pip wheel setuptools \
     && /opt/whisperx_venv/bin/pip install --no-cache-dir whisperx grpcio protobuf python-dotenv
