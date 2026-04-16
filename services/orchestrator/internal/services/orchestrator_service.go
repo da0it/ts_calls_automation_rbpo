@@ -14,6 +14,7 @@ const (
 	ProcessStatusCompleted             = "completed"
 	ProcessStatusAwaitingRoutingReview = "awaiting_routing_review"
 	ProcessStatusSpamBlocked           = "spam_blocked"
+	ProcessStatusNoSpeech              = "no_speech"
 )
 
 type OrchestratorService struct {
@@ -162,6 +163,13 @@ func buildManualSpamOverride(base *clients.SpamCheckResponse) *clients.SpamCheck
 	return out
 }
 
+func isTranscriptEmpty(transcript *clients.TranscriptionResponse) bool {
+	if transcript == nil {
+		return true
+	}
+	return len(transcript.Segments) == 0
+}
+
 func (s *OrchestratorService) routeTranscript(transcript *clients.TranscriptionResponse, skipSpamGate bool) (*clients.RoutingResponse, error) {
 	if transcript == nil {
 		return nil, fmt.Errorf("transcript is required")
@@ -234,6 +242,19 @@ func (s *OrchestratorService) ProcessCall(audioPath string) (*ProcessCallResult,
 	processingTime["transcription"] = time.Since(stepStart).Seconds()
 	log.Printf("✓ Transcription completed in %.2fs (found %d segments)",
 		processingTime["transcription"], len(transcript.Segments))
+
+	if isTranscriptEmpty(transcript) {
+		totalTime := time.Since(startTime).Seconds()
+		log.Printf("Call processing finished without routing: no speech/segments detected in %.2fs", totalTime)
+		return &ProcessCallResult{
+			CallID:         transcript.CallID,
+			Status:         ProcessStatusNoSpeech,
+			Transcript:     transcript,
+			Entities:       emptyEntities(),
+			ProcessingTime: processingTime,
+			TotalTime:      totalTime,
+		}, nil
+	}
 
 	// 2. Маршрутизация
 	log.Println("Step 2/5: Routing call...")

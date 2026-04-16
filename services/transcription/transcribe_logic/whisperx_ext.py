@@ -7,7 +7,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
-
 def _run(cmd: List[str], timeout_sec: int) -> None:
     try:
         p = subprocess.run(
@@ -28,7 +27,6 @@ def _run(cmd: List[str], timeout_sec: int) -> None:
             + "\n\nSTDOUT:\n" + p.stdout
             + "\n\nSTDERR:\n" + p.stderr
         )
-
 
 def whisperx_transcribe_via_cli(
     audio_path: str,

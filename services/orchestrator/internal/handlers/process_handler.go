@@ -193,7 +193,7 @@ func hasTicket(raw map[string]interface{}) bool {
 }
 
 func automaticStopTime(status string, ticket map[string]interface{}, processedAt string) string {
-	if status == services.ProcessStatusSpamBlocked {
+	if status == services.ProcessStatusSpamBlocked || status == services.ProcessStatusNoSpeech {
 		return processedAt
 	}
 	if hasTicket(ticket) {
@@ -465,6 +465,18 @@ func (h *ProcessHandler) ProcessCall(c *gin.Context) {
 		})
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("unsupported audio format: %s (allowed: mp3, wav, m4a, flac, ogg)", ext),
+		})
+		return
+	}
+
+	if file.Size == 0 {
+		h.writeAudit(c, "call.process", "call", "", "failed", map[string]interface{}{
+			"reason":     "empty_audio_file",
+			"audio_ext":  ext,
+			"audio_size": file.Size,
+		})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "audio file is empty",
 		})
 		return
 	}

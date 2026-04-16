@@ -14,7 +14,7 @@ from pathlib import Path
 
 ALLOWED_AUDIO = {".mp3", ".wav", ".ogg", ".m4a", ".flac"}
 REQUIRED_AUDIO_FOR_FULL_COVERAGE = {".mp3", ".wav", ".ogg"}
-KNOWN_PROCESS_STATUSES = {"completed", "awaiting_routing_review", "spam_blocked"}
+KNOWN_PROCESS_STATUSES = {"completed", "awaiting_routing_review", "spam_blocked", "no_speech"}
 ENTITY_KEYS = [
     "persons",
     "phones",
@@ -128,20 +128,22 @@ def validate_ok_response(payload, allow_review_status):
     require(str(payload.get("call_id") or "").strip() != "", "call_id is empty")
     require(isinstance(payload.get("transcript"), dict), "transcript is missing")
     require(isinstance(payload["transcript"].get("segments"), list), "segments are missing")
-    require(len(payload["transcript"]["segments"]) > 0, "segments are empty")
-    for segment in payload["transcript"]["segments"][:3]:
-        require(isinstance(segment, dict), "segment must be an object")
-        require(str(segment.get("text") or "").strip() != "", "segment text is empty")
-        require(segment.get("start") is not None, "segment start is missing")
-        require(segment.get("end") is not None, "segment end is missing")
-    require(isinstance(payload.get("routing"), dict), "routing is missing")
-    require(str(payload["routing"].get("intent_id") or "").strip() != "", "intent_id is empty")
-    require(payload["routing"].get("intent_confidence") is not None, "intent_confidence is empty")
-    require(str(payload["routing"].get("priority") or "").strip() != "", "priority is empty")
-    require(str(payload["routing"].get("suggested_group") or "").strip() != "", "suggested_group is empty")
+    if status != "no_speech":
+        require(len(payload["transcript"]["segments"]) > 0, "segments are empty")
+        for segment in payload["transcript"]["segments"][:3]:
+            require(isinstance(segment, dict), "segment must be an object")
+            require(str(segment.get("text") or "").strip() != "", "segment text is empty")
+            require(segment.get("start") is not None, "segment start is missing")
+            require(segment.get("end") is not None, "segment end is missing")
+        require(isinstance(payload.get("routing"), dict), "routing is missing")
+        require(str(payload["routing"].get("intent_id") or "").strip() != "", "intent_id is empty")
+        require(payload["routing"].get("intent_confidence") is not None, "intent_confidence is empty")
+        require(str(payload["routing"].get("priority") or "").strip() != "", "priority is empty")
+        require(str(payload["routing"].get("suggested_group") or "").strip() != "", "suggested_group is empty")
     require(isinstance(payload.get("processing_time"), dict), "processing_time is missing")
     require(payload["processing_time"].get("transcription") is not None, "transcription time is missing")
-    require(payload["processing_time"].get("routing") is not None, "routing time is missing")
+    if status != "no_speech":
+        require(payload["processing_time"].get("routing") is not None, "routing time is missing")
     require(isinstance(payload.get("entities"), dict), "entities are missing")
     for key in ENTITY_KEYS:
         require(isinstance(payload["entities"].get(key), list), f"entities.{key} is missing")

@@ -1,6 +1,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
+import exec from 'k6/execution';
 
 function env(name, defaultValue = '') {
   const value = (__ENV[name] || '').trim();
@@ -136,6 +137,7 @@ function buildTextSummary(data) {
   lines.push(`payload_incomplete rate: ${fmt(metricValue(data, 'payload_incomplete_rate', 'rate'), 4)}`);
   lines.push(`result_completed count: ${fmt(metricValue(data, 'result_completed_count', 'count'), 0)}`);
   lines.push(`result_spam_blocked count: ${fmt(metricValue(data, 'result_spam_blocked_count', 'count'), 0)}`);
+  lines.push(`result_no_speech count: ${fmt(metricValue(data, 'result_no_speech_count', 'count'), 0)}`);
   lines.push(`result_review_required count: ${fmt(metricValue(data, 'result_review_required_count', 'count'), 0)}`);
   lines.push(`dropped_iterations count: ${fmt(metricValue(data, 'dropped_iterations', 'count'), 0)}`);
   return `${lines.join('\n')}\n`;
@@ -156,6 +158,7 @@ const payloadIncompleteRate = new Rate('payload_incomplete_rate');
 const http5xxRate = new Rate('http_5xx_rate');
 const resultCompletedCount = new Counter('result_completed_count');
 const resultSpamBlockedCount = new Counter('result_spam_blocked_count');
+const resultNoSpeechCount = new Counter('result_no_speech_count');
 const resultReviewRequiredCount = new Counter('result_review_required_count');
 
 export const options = {
@@ -206,7 +209,8 @@ export function setup() {
 }
 
 export default function (data) {
-  const file = audioFixtures[__ITER % audioFixtures.length];
+  const globalIteration = exec.scenario.iterationInTest;
+  const file = audioFixtures[globalIteration % audioFixtures.length];
   const response = http.post(
     `${baseUrl}/api/v1/process-call`,
     {
@@ -229,10 +233,13 @@ export default function (data) {
   const payload = safeJson(response);
   const processingTime = payload && typeof payload.processing_time === 'object' ? payload.processing_time : null;
   const status = payload && typeof payload.status === 'string' ? payload.status : '';
+  const hasTranscript = !!(payload && payload.transcript);
+  const hasRouting = !!(payload && payload.routing);
+  const isNoSpeech = status === 'no_speech';
 
   http5xxRate.add(response.status >= 500 ? 1 : 0);
   payloadIncompleteRate.add(
-    payload && payload.transcript && payload.routing ? 0 : 1,
+    payload && hasTranscript && (hasRouting || isNoSpeech) ? 0 : 1,
     { status: response.status, audio_name: file.name },
   );
 
@@ -263,12 +270,16 @@ export default function (data) {
     resultCompletedCount.add(1);
   } else if (status === 'spam_blocked') {
     resultSpamBlockedCount.add(1);
+  } else if (status === 'no_speech') {
+    resultNoSpeechCount.add(1);
+  } else if (status === 'awaiting_routing_review') {
+    resultReviewRequiredCount.add(1);
   }
 
   check(response, {
     'process-call status is 200': (res) => res.status === 200,
-    'response contains transcript': () => !!(payload && payload.transcript),
-    'response contains routing': () => !!(payload && payload.routing),
+    'response contains transcript': () => hasTranscript,
+    'response contains routing or no_speech status': () => hasRouting || isNoSpeech,
     'response contains status': () => !!status,
     'response contains total_time': () => totalTime !== null,
   });

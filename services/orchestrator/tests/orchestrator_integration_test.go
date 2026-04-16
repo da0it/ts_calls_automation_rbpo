@@ -329,6 +329,51 @@ func TestProcessCallIntegrationStopsOnLowConfidenceRouting(t *testing.T) {
 	}
 }
 
+func TestProcessCallIntegrationReturnsNoSpeechWithoutRouting(t *testing.T) {
+	env := buildServiceForTest(
+		t,
+		&callprocessingv1.Transcript{
+			CallId:   "call-empty",
+			Segments: []*callprocessingv1.Segment{},
+		},
+		&callprocessingv1.Routing{
+			IntentId:         "misc.triage",
+			IntentConfidence: 0.1,
+			Priority:         "medium",
+			SuggestedGroup:   "support",
+		},
+		`{"entities":{}}`,
+		0.5,
+	)
+
+	result, err := env.service.ProcessCall(writeAudioFile(t))
+	if err != nil {
+		t.Fatalf("process call: %v", err)
+	}
+
+	if result.Status != services.ProcessStatusNoSpeech {
+		t.Fatalf("expected status %q, got %q", services.ProcessStatusNoSpeech, result.Status)
+	}
+	if env.routingCalls.count() != 0 {
+		t.Fatalf("routing service must not be called, got %d calls", env.routingCalls.count())
+	}
+	if env.ticketCalls.count() != 0 {
+		t.Fatalf("ticket service must not be called, got %d calls", env.ticketCalls.count())
+	}
+	if *env.entityCalls != 0 {
+		t.Fatalf("entity service must not be called, got %d calls", *env.entityCalls)
+	}
+	if result.Routing != nil {
+		t.Fatalf("routing must be nil for no_speech, got %#v", result.Routing)
+	}
+	if result.Ticket != nil {
+		t.Fatalf("ticket must be nil for no_speech, got %#v", result.Ticket)
+	}
+	if result.Entities == nil {
+		t.Fatal("entities must not be nil for no_speech")
+	}
+}
+
 func TestProcessCallIntegrationContinuesWhenEntityExtractionFails(t *testing.T) {
 	transcriptionServer := &fakeTranscriptionServer{
 		response: &callprocessingv1.Transcript{
