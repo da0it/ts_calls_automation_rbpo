@@ -1,0 +1,20 @@
+FROM golang:1.25-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir bandit==1.9.4
+RUN go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+ENV PATH="/go/bin:${PATH}"
+
+WORKDIR /workspace
