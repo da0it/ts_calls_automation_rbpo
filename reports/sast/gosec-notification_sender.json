@@ -1,0 +1,131 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/05/05b601b74fe0f1141e4dc1805329b235746c481f817a9753f6733d7e23cf3c37-a: no such file or directory"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/notification_sender/cmd/server/main.go": [
+			{
+				"line": 14,
+				"column": 2,
+				"error": "could not import google.golang.org/grpc (invalid package name: \"\")"
+			},
+			{
+				"line": 15,
+				"column": 2,
+				"error": "could not import google.golang.org/grpc/credentials (invalid package name: \"\")"
+			},
+			{
+				"line": 17,
+				"column": 2,
+				"error": "could not import notification_sender/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 18,
+				"column": 19,
+				"error": "could not import notification_sender/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 19,
+				"column": 2,
+				"error": "could not import notification_sender/internal/handlers (invalid package name: \"\")"
+			},
+			{
+				"line": 20,
+				"column": 2,
+				"error": "could not import notification_sender/internal/services (invalid package name: \"\")"
+			},
+			{
+				"line": 21,
+				"column": 2,
+				"error": "could not import notification_sender/pkg/config (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/notification_sender/internal/adapters/email_adapter.go": [
+			{
+				"line": 5,
+				"column": 2,
+				"error": "could not import net/smtp (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/notification_sender/internal/handlers/grpc_notification_handler.go": [
+			{
+				"line": 6,
+				"column": 19,
+				"error": "could not import notification_sender/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 7,
+				"column": 2,
+				"error": "could not import notification_sender/internal/services (invalid package name: \"\")"
+			},
+			{
+				"line": 9,
+				"column": 2,
+				"error": "could not import google.golang.org/grpc/codes (invalid package name: \"\")"
+			},
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import google.golang.org/grpc/status (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/notification_sender/internal/services/notification_service.go": [
+			{
+				"line": 7,
+				"column": 2,
+				"error": "could not import notification_sender/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 8,
+				"column": 19,
+				"error": "could not import notification_sender/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 9,
+				"column": 2,
+				"error": "could not import notification_sender/internal/templates (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/notification_sender/internal/templates/formatter.go": [
+			{
+				"line": 9,
+				"column": 2,
+				"error": "could not import notification_sender/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 10,
+				"column": 19,
+				"error": "could not import notification_sender/internal/gen (invalid package name: \"\")"
+			}
+		]
+	},
+	"Issues": [
+		{
+			"severity": "MEDIUM",
+			"confidence": "LOW",
+			"cwe": {
+				"id": "400",
+				"url": "https://cwe.mitre.org/data/definitions/400.html"
+			},
+			"rule_id": "G112",
+			"details": "Potential Slowloris Attack because ReadHeaderTimeout is not configured in the http.Server",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/notification_sender/cmd/server/main.go",
+			"code": "40: \thttpAddr := \":\" + cfg.HTTPPort\n41: \thttpSrv := \u0026http.Server{Addr: httpAddr, Handler: router}\n42: \n",
+			"line": "41",
+			"column": "14",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 9,
+		"lines": 723,
+		"nosec": 0,
+		"found": 1
+	},
+	"GosecVersion": "dev"
+}

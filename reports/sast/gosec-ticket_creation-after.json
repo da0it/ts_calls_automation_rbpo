@@ -1,0 +1,123 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/bd/bdc0a1f2632d4a2f1b74310a0751e169e34566bddcbd7b9ad226e13f07912dbc-a: no such file or directory"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/39/399406c5dc7da12ea6e1072e11182ffdd6c8c1942fa65bd68cdf947a740bfcdf-a: no such file or directory"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/ticket_creation/cmd/server/main.go": [
+			{
+				"line": 18,
+				"column": 2,
+				"error": "could not import ticket_module/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 19,
+				"column": 2,
+				"error": "could not import ticket_module/internal/clients (invalid package name: \"\")"
+			},
+			{
+				"line": 20,
+				"column": 2,
+				"error": "could not import ticket_module/internal/database (invalid package name: \"\")"
+			},
+			{
+				"line": 21,
+				"column": 19,
+				"error": "could not import ticket_module/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 22,
+				"column": 2,
+				"error": "could not import ticket_module/internal/handlers (invalid package name: \"\")"
+			},
+			{
+				"line": 23,
+				"column": 2,
+				"error": "could not import ticket_module/internal/services (invalid package name: \"\")"
+			},
+			{
+				"line": 24,
+				"column": 2,
+				"error": "could not import ticket_module/pkg/config (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/ticket_creation/internal/adapters/mock_adapter.go": [
+			{
+				"line": 9,
+				"column": 2,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/ticket_creation/internal/clients/python_client.go": [
+			{
+				"line": 12,
+				"column": 2,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/ticket_creation/internal/database/repository.go": [
+			{
+				"line": 11,
+				"column": 5,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/ticket_creation/internal/handlers/grpc_ticket_handler.go": [
+			{
+				"line": 6,
+				"column": 19,
+				"error": "could not import ticket_module/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 7,
+				"column": 2,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			},
+			{
+				"line": 8,
+				"column": 2,
+				"error": "could not import ticket_module/internal/services (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/ticket_creation/internal/services/summarizer.go": [
+			{
+				"line": 13,
+				"column": 2,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/ticket_creation/internal/services/ticket_creator.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import ticket_module/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 2,
+				"error": "could not import ticket_module/internal/clients (invalid package name: \"\")"
+			},
+			{
+				"line": 12,
+				"column": 2,
+				"error": "could not import ticket_module/internal/database (invalid package name: \"\")"
+			}
+		]
+	},
+	"Issues": [],
+	"Stats": {
+		"files": 15,
+		"lines": 1983,
+		"nosec": 0,
+		"found": 0
+	},
+	"GosecVersion": "dev"
+}

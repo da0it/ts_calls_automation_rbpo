@@ -1,0 +1,206 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/b1/b135dcba72d31c4e0d5f62304d96db5b8206889f3f384c879faee7524ff6cb37-a: no such file or directory"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/28/283a9c0d1ae7f0346c4226e5df2572e1cffee0d1368a1ce1931ad1ce0c0b49a8-a: no such file or directory"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/cmd/server/main.go": [
+			{
+				"line": 22,
+				"column": 2,
+				"error": "could not import orchestrator/internal/clients (invalid package name: \"\")"
+			},
+			{
+				"line": 23,
+				"column": 19,
+				"error": "could not import orchestrator/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 24,
+				"column": 2,
+				"error": "could not import orchestrator/internal/handlers (invalid package name: \"\")"
+			},
+			{
+				"line": 25,
+				"column": 2,
+				"error": "could not import orchestrator/internal/middleware (invalid package name: \"\")"
+			},
+			{
+				"line": 26,
+				"column": 2,
+				"error": "could not import orchestrator/internal/models (invalid package name: \"\")"
+			},
+			{
+				"line": 27,
+				"column": 2,
+				"error": "could not import orchestrator/internal/services (invalid package name: \"\")"
+			},
+			{
+				"line": 28,
+				"column": 2,
+				"error": "could not import orchestrator/pkg/config (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/clients/routing_client.go": [
+			{
+				"line": 9,
+				"column": 19,
+				"error": "could not import orchestrator/internal/gen (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/handlers/auth_handler.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/middleware (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 2,
+				"error": "could not import orchestrator/internal/models (invalid package name: \"\")"
+			},
+			{
+				"line": 12,
+				"column": 2,
+				"error": "could not import orchestrator/internal/services (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/handlers/grpc_process_handler.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/clients (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 19,
+				"error": "could not import orchestrator/internal/gen (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/middleware/auth.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/models (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 2,
+				"error": "could not import orchestrator/internal/services (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/services/orchestrator_service.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/clients (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/services/user_service.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/models (invalid package name: \"\")"
+			}
+		]
+	},
+	"Issues": [
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "22",
+				"url": "https://cwe.mitre.org/data/definitions/22.html"
+			},
+			"rule_id": "G304",
+			"details": "Potential file inclusion via variable",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/services/routing_config_service.go",
+			"code": "543: func readJSONFile(path string, out any) error {\n544: \tpayload, err := os.ReadFile(path)\n545: \tif err != nil {\n",
+			"line": "544",
+			"column": "18",
+			"nosec": false,
+			"suppressions": null,
+			"autofix": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal."
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "22",
+				"url": "https://cwe.mitre.org/data/definitions/22.html"
+			},
+			"rule_id": "G304",
+			"details": "Potential file inclusion via variable",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/clients/transcription_client.go",
+			"code": "49: func (c *TranscriptionClient) Transcribe(audioPath string) (*TranscriptionResponse, error) {\n50: \taudioData, err := os.ReadFile(audioPath)\n51: \tif err != nil {\n",
+			"line": "50",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null,
+			"autofix": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal."
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/handlers/grpc_process_handler.go",
+			"code": "49: \t}\n50: \ttmpFile.Close()\n51: \tdefer os.Remove(tmpPath)\n",
+			"line": "50",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/handlers/grpc_process_handler.go",
+			"code": "46: \t\ttmpFile.Close()\n47: \t\tos.Remove(tmpPath)\n48: \t\treturn nil, fmt.Errorf(\"write temp audio: %w\", err)\n",
+			"line": "47",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real_after2/services/orchestrator/internal/handlers/grpc_process_handler.go",
+			"code": "45: \tif _, err := tmpFile.Write(req.GetAudio()); err != nil {\n46: \t\ttmpFile.Close()\n47: \t\tos.Remove(tmpPath)\n",
+			"line": "46",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 27,
+		"lines": 5137,
+		"nosec": 0,
+		"found": 5
+	},
+	"GosecVersion": "dev"
+}

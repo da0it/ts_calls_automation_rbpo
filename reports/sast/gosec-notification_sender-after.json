@@ -1,0 +1,92 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/d8/d8f3fc1fea2fd84c2b3b2b398d8784b7925b6d95a28053f21996eb17e1d0465a-a: no such file or directory"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/02/029f6d622dd0660ca5bd425e5c6ed90b6b63c3442d8ee62ce4cb8d7f6a28deb2-a: no such file or directory"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/notification_sender/cmd/server/main.go": [
+			{
+				"line": 17,
+				"column": 2,
+				"error": "could not import notification_sender/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 18,
+				"column": 19,
+				"error": "could not import notification_sender/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 19,
+				"column": 2,
+				"error": "could not import notification_sender/internal/handlers (invalid package name: \"\")"
+			},
+			{
+				"line": 20,
+				"column": 2,
+				"error": "could not import notification_sender/internal/services (invalid package name: \"\")"
+			},
+			{
+				"line": 21,
+				"column": 2,
+				"error": "could not import notification_sender/pkg/config (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/notification_sender/internal/handlers/grpc_notification_handler.go": [
+			{
+				"line": 6,
+				"column": 19,
+				"error": "could not import notification_sender/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 7,
+				"column": 2,
+				"error": "could not import notification_sender/internal/services (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/notification_sender/internal/services/notification_service.go": [
+			{
+				"line": 7,
+				"column": 2,
+				"error": "could not import notification_sender/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 8,
+				"column": 19,
+				"error": "could not import notification_sender/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 9,
+				"column": 2,
+				"error": "could not import notification_sender/internal/templates (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real_after/services/notification_sender/internal/templates/formatter.go": [
+			{
+				"line": 9,
+				"column": 2,
+				"error": "could not import notification_sender/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 10,
+				"column": 19,
+				"error": "could not import notification_sender/internal/gen (invalid package name: \"\")"
+			}
+		]
+	},
+	"Issues": [],
+	"Stats": {
+		"files": 9,
+		"lines": 727,
+		"nosec": 0,
+		"found": 0
+	},
+	"GosecVersion": "dev"
+}

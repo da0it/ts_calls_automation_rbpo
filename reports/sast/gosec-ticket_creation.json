@@ -1,0 +1,179 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/2e/2e6323f932361ed3dbf8ecf252d699027b900c46df8477f611d3573014a5a1b3-a: no such file or directory"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/15/1530ac5fe95db1da1f18404064b2bdf4755e8208176be30185f65d870efc9cfc-a: no such file or directory"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/cmd/server/main.go": [
+			{
+				"line": 15,
+				"column": 2,
+				"error": "could not import github.com/gin-gonic/gin (invalid package name: \"\")"
+			},
+			{
+				"line": 18,
+				"column": 2,
+				"error": "could not import ticket_module/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 19,
+				"column": 2,
+				"error": "could not import ticket_module/internal/clients (invalid package name: \"\")"
+			},
+			{
+				"line": 20,
+				"column": 2,
+				"error": "could not import ticket_module/internal/database (invalid package name: \"\")"
+			},
+			{
+				"line": 21,
+				"column": 19,
+				"error": "could not import ticket_module/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 22,
+				"column": 2,
+				"error": "could not import ticket_module/internal/handlers (invalid package name: \"\")"
+			},
+			{
+				"line": 23,
+				"column": 2,
+				"error": "could not import ticket_module/internal/services (invalid package name: \"\")"
+			},
+			{
+				"line": 24,
+				"column": 2,
+				"error": "could not import ticket_module/pkg/config (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/internal/adapters/mock_adapter.go": [
+			{
+				"line": 8,
+				"column": 2,
+				"error": "could not import github.com/google/uuid (invalid package name: \"\")"
+			},
+			{
+				"line": 9,
+				"column": 2,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/internal/clients/python_client.go": [
+			{
+				"line": 12,
+				"column": 2,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/internal/database/postgres.go": [
+			{
+				"line": 8,
+				"column": 5,
+				"error": "could not import github.com/jmoiron/sqlx (invalid package name: \"\")"
+			},
+			{
+				"line": 9,
+				"column": 7,
+				"error": "could not import github.com/lib/pq (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/internal/database/repository.go": [
+			{
+				"line": 10,
+				"column": 5,
+				"error": "could not import github.com/google/uuid (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 5,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/internal/handlers/grpc_ticket_handler.go": [
+			{
+				"line": 6,
+				"column": 19,
+				"error": "could not import ticket_module/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 7,
+				"column": 2,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			},
+			{
+				"line": 8,
+				"column": 2,
+				"error": "could not import ticket_module/internal/services (invalid package name: \"\")"
+			},
+			{
+				"line": 12,
+				"column": 2,
+				"error": "could not import google.golang.org/protobuf/types/known/timestamppb (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/internal/handlers/ticket_handler.go": [
+			{
+				"line": 9,
+				"column": 5,
+				"error": "could not import github.com/gin-gonic/gin (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/internal/services/summarizer.go": [
+			{
+				"line": 13,
+				"column": 2,
+				"error": "could not import ticket_module/internal/models (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/internal/services/ticket_creator.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import ticket_module/internal/adapters (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 2,
+				"error": "could not import ticket_module/internal/clients (invalid package name: \"\")"
+			},
+			{
+				"line": 12,
+				"column": 2,
+				"error": "could not import ticket_module/internal/database (invalid package name: \"\")"
+			}
+		]
+	},
+	"Issues": [
+		{
+			"severity": "MEDIUM",
+			"confidence": "LOW",
+			"cwe": {
+				"id": "400",
+				"url": "https://cwe.mitre.org/data/definitions/400.html"
+			},
+			"rule_id": "G112",
+			"details": "Potential Slowloris Attack because ReadHeaderTimeout is not configured in the http.Server",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/ticket_creation/cmd/server/main.go",
+			"code": "88: \thttpAddr := \":\" + cfg.ServerPort\n89: \thttpSrv := \u0026http.Server{\n90: \t\tAddr:    httpAddr,\n91: \t\tHandler: router,\n92: \t}\n93: \n",
+			"line": "89-92",
+			"column": "14",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 15,
+		"lines": 1982,
+		"nosec": 0,
+		"found": 1
+	},
+	"GosecVersion": "dev"
+}

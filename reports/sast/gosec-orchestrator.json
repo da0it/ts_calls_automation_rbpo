@@ -1,0 +1,350 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/44/440455dbea9898f9d970380382492366103504ed7fd13c7dff8d8fa6a0f4bb5d-a: no such file or directory"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "loading compiled Go files from cache: reading srcfiles list: cache entry not found: open /Users/dmitrii/Library/Caches/go-build/19/1999758e0aaac2ead6f8b933897b84c3e563be550a4aace630de403a2aa3de62-a: no such file or directory"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/cmd/server/main.go": [
+			{
+				"line": 22,
+				"column": 2,
+				"error": "could not import orchestrator/internal/clients (invalid package name: \"\")"
+			},
+			{
+				"line": 23,
+				"column": 19,
+				"error": "could not import orchestrator/internal/gen (invalid package name: \"\")"
+			},
+			{
+				"line": 24,
+				"column": 2,
+				"error": "could not import orchestrator/internal/handlers (invalid package name: \"\")"
+			},
+			{
+				"line": 25,
+				"column": 2,
+				"error": "could not import orchestrator/internal/middleware (invalid package name: \"\")"
+			},
+			{
+				"line": 26,
+				"column": 2,
+				"error": "could not import orchestrator/internal/models (invalid package name: \"\")"
+			},
+			{
+				"line": 27,
+				"column": 2,
+				"error": "could not import orchestrator/internal/services (invalid package name: \"\")"
+			},
+			{
+				"line": 28,
+				"column": 2,
+				"error": "could not import orchestrator/pkg/config (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/clients/routing_client.go": [
+			{
+				"line": 9,
+				"column": 19,
+				"error": "could not import orchestrator/internal/gen (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/handlers/auth_handler.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/middleware (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 2,
+				"error": "could not import orchestrator/internal/models (invalid package name: \"\")"
+			},
+			{
+				"line": 12,
+				"column": 2,
+				"error": "could not import orchestrator/internal/services (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/handlers/grpc_process_handler.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/clients (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 19,
+				"error": "could not import orchestrator/internal/gen (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/middleware/auth.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/models (invalid package name: \"\")"
+			},
+			{
+				"line": 11,
+				"column": 2,
+				"error": "could not import orchestrator/internal/services (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/orchestrator_service.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/clients (invalid package name: \"\")"
+			}
+		],
+		"/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/user_service.go": [
+			{
+				"line": 10,
+				"column": 2,
+				"error": "could not import orchestrator/internal/models (invalid package name: \"\")"
+			}
+		]
+	},
+	"Issues": [
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "22",
+				"url": "https://cwe.mitre.org/data/definitions/22.html"
+			},
+			"rule_id": "G304",
+			"details": "Potential file inclusion via variable",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/routing_config_service.go",
+			"code": "543: func readJSONFile(path string, out any) error {\n544: \tpayload, err := os.ReadFile(path)\n545: \tif err != nil {\n",
+			"line": "544",
+			"column": "18",
+			"nosec": false,
+			"suppressions": null,
+			"autofix": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal."
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "22",
+				"url": "https://cwe.mitre.org/data/definitions/22.html"
+			},
+			"rule_id": "G304",
+			"details": "Potential file inclusion via variable",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/clients/transcription_client.go",
+			"code": "49: func (c *TranscriptionClient) Transcribe(audioPath string) (*TranscriptionResponse, error) {\n50: \taudioData, err := os.ReadFile(audioPath)\n51: \tif err != nil {\n",
+			"line": "50",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null,
+			"autofix": "Consider using os.Root to scope file access under a fixed root (Go \u003e=1.24). Prefer root.Open/root.Stat over os.Open/os.Stat to prevent directory traversal."
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "LOW",
+			"cwe": {
+				"id": "400",
+				"url": "https://cwe.mitre.org/data/definitions/400.html"
+			},
+			"rule_id": "G112",
+			"details": "Potential Slowloris Attack because ReadHeaderTimeout is not configured in the http.Server",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/cmd/server/main.go",
+			"code": "148: \thttpAddr := \":\" + cfg.HTTPPort\n149: \thttpSrv := \u0026http.Server{\n150: \t\tAddr:    httpAddr,\n151: \t\tHandler: router,\n152: \t}\n153: \n",
+			"line": "149-152",
+			"column": "14",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G302",
+			"details": "Expect file permissions to be 0600 or less",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/spam_feedback_service.go",
+			"code": "127: \n128: \tfile, err := os.OpenFile(s.feedbackPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)\n129: \tif err != nil {\n",
+			"line": "128",
+			"column": "15",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G302",
+			"details": "Expect file permissions to be 0600 or less",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/routing_feedback_service.go",
+			"code": "156: \n157: \tfile, err := os.OpenFile(s.feedbackPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)\n158: \tif err != nil {\n",
+			"line": "157",
+			"column": "15",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G301",
+			"details": "Expect directory permissions to be 0750 or less",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/spam_feedback_service.go",
+			"code": "123: \n124: \tif err := os.MkdirAll(filepath.Dir(s.feedbackPath), 0755); err != nil {\n125: \t\treturn nil, fmt.Errorf(\"create spam feedback directory: %w\", err)\n",
+			"line": "124",
+			"column": "12",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G301",
+			"details": "Expect directory permissions to be 0750 or less",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/routing_feedback_service.go",
+			"code": "152: \n153: \tif err := os.MkdirAll(filepath.Dir(s.feedbackPath), 0755); err != nil {\n154: \t\treturn nil, fmt.Errorf(\"create feedback directory: %w\", err)\n",
+			"line": "153",
+			"column": "12",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G301",
+			"details": "Expect directory permissions to be 0750 or less",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/routing_config_service.go",
+			"code": "554: func writeJSONFileAtomic(path string, payload any) error {\n555: \tif err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {\n556: \t\treturn err\n",
+			"line": "555",
+			"column": "12",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G301",
+			"details": "Expect directory permissions to be 0750 or less",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/handlers/process_handler.go",
+			"code": "369: \tuploadDir := \"./uploads\"\n370: \tos.MkdirAll(uploadDir, 0755)\n371: \n",
+			"line": "370",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "MEDIUM",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "276",
+				"url": "https://cwe.mitre.org/data/definitions/276.html"
+			},
+			"rule_id": "G306",
+			"details": "Expect WriteFile permissions to be 0600 or less",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/services/routing_config_service.go",
+			"code": "565: \ttmpPath := path + \".tmp\"\n566: \tif err := os.WriteFile(tmpPath, body, 0644); err != nil {\n567: \t\treturn err\n",
+			"line": "566",
+			"column": "12",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/handlers/process_handler.go",
+			"code": "369: \tuploadDir := \"./uploads\"\n370: \tos.MkdirAll(uploadDir, 0755)\n371: \n",
+			"line": "370",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/handlers/grpc_process_handler.go",
+			"code": "49: \t}\n50: \ttmpFile.Close()\n51: \tdefer os.Remove(tmpPath)\n",
+			"line": "50",
+			"column": "2",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/handlers/grpc_process_handler.go",
+			"code": "46: \t\ttmpFile.Close()\n47: \t\tos.Remove(tmpPath)\n48: \t\treturn nil, fmt.Errorf(\"write temp audio: %w\", err)\n",
+			"line": "47",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "703",
+				"url": "https://cwe.mitre.org/data/definitions/703.html"
+			},
+			"rule_id": "G104",
+			"details": "Errors unhandled",
+			"file": "/private/tmp/ts_submodule_rbpo_sast_real/services/orchestrator/internal/handlers/grpc_process_handler.go",
+			"code": "45: \tif _, err := tmpFile.Write(req.GetAudio()); err != nil {\n46: \t\ttmpFile.Close()\n47: \t\tos.Remove(tmpPath)\n",
+			"line": "46",
+			"column": "3",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 27,
+		"lines": 5134,
+		"nosec": 0,
+		"found": 14
+	},
+	"GosecVersion": "dev"
+}
