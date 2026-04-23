@@ -15,6 +15,8 @@ const (
 	ProcessStatusAwaitingRoutingReview = "awaiting_routing_review"
 	ProcessStatusSpamBlocked           = "spam_blocked"
 	ProcessStatusNoSpeech              = "no_speech"
+	spamIntentID                       = "spam.call"
+	legacySpamIntentID                 = "spam"
 )
 
 type OrchestratorService struct {
@@ -124,6 +126,18 @@ func isSpamBlocked(spamCheck *clients.SpamCheckResponse) bool {
 	return spamCheck.Status == "block" || spamCheck.Status == "review"
 }
 
+func isSpamIntent(intentID string) bool {
+	raw := strings.ToLower(strings.TrimSpace(intentID))
+	return raw == spamIntentID || raw == legacySpamIntentID
+}
+
+func isSpamBlockedRouting(routing *clients.RoutingResponse) bool {
+	if routing == nil {
+		return false
+	}
+	return isSpamIntent(routing.IntentID) || isSpamBlocked(routing.SpamCheck)
+}
+
 func isSpamConflictReview(spamCheck *clients.SpamCheckResponse) bool {
 	if spamCheck == nil {
 		return false
@@ -170,11 +184,11 @@ func isTranscriptEmpty(transcript *clients.TranscriptionResponse) bool {
 	return len(transcript.Segments) == 0
 }
 
-func (s *OrchestratorService) routeTranscript(transcript *clients.TranscriptionResponse, skipSpamGate bool) (*clients.RoutingResponse, error) {
+func (s *OrchestratorService) routeTranscript(transcript *clients.TranscriptionResponse) (*clients.RoutingResponse, error) {
 	if transcript == nil {
 		return nil, fmt.Errorf("transcript is required")
 	}
-	return s.routingClient.Route(transcript.CallID, transcript.Segments, skipSpamGate)
+	return s.routingClient.Route(transcript.CallID, transcript.Segments)
 }
 
 func (s *OrchestratorService) completeNonSpamCall(
@@ -259,7 +273,7 @@ func (s *OrchestratorService) ProcessCall(audioPath string) (*ProcessCallResult,
 	// 2. Маршрутизация
 	log.Println("Step 2/5: Routing call...")
 	stepStart = time.Now()
-	routing, err := s.routeTranscript(transcript, false)
+	routing, err := s.routeTranscript(transcript)
 	if err != nil {
 		return nil, fmt.Errorf("routing failed: %w", err)
 	}
@@ -286,20 +300,6 @@ func (s *OrchestratorService) ProcessCall(audioPath string) (*ProcessCallResult,
 			TotalTime:      totalTime,
 		}, nil
 	}
-	if isSpamBlocked(routing.SpamCheck) {
-		totalTime := time.Since(startTime).Seconds()
-		log.Printf("Call blocked by spam gate in %.2fs", totalTime)
-		return &ProcessCallResult{
-			CallID:         transcript.CallID,
-			Status:         ProcessStatusSpamBlocked,
-			Transcript:     transcript,
-			Routing:        routing,
-			SpamCheck:      cloneSpamCheck(routing.SpamCheck),
-			Entities:       emptyEntities(),
-			ProcessingTime: processingTime,
-			TotalTime:      totalTime,
-		}, nil
-	}
 	if isRoutingReviewRequired(routing, s.routingReviewConfidenceThreshold) {
 		totalTime := time.Since(startTime).Seconds()
 		log.Printf(
@@ -311,6 +311,20 @@ func (s *OrchestratorService) ProcessCall(audioPath string) (*ProcessCallResult,
 		return &ProcessCallResult{
 			CallID:         transcript.CallID,
 			Status:         ProcessStatusAwaitingRoutingReview,
+			Transcript:     transcript,
+			Routing:        routing,
+			SpamCheck:      cloneSpamCheck(routing.SpamCheck),
+			Entities:       emptyEntities(),
+			ProcessingTime: processingTime,
+			TotalTime:      totalTime,
+		}, nil
+	}
+	if isSpamBlockedRouting(routing) {
+		totalTime := time.Since(startTime).Seconds()
+		log.Printf("Call classified as spam in %.2fs", totalTime)
+		return &ProcessCallResult{
+			CallID:         transcript.CallID,
+			Status:         ProcessStatusSpamBlocked,
 			Transcript:     transcript,
 			Routing:        routing,
 			SpamCheck:      cloneSpamCheck(routing.SpamCheck),
@@ -371,7 +385,7 @@ func (s *OrchestratorService) ContinueAfterSpamBlock(input ContinueAfterSpamBloc
 	log.Printf("Continuing call after manual spam override: call_id=%s", input.Transcript.CallID)
 
 	stepStart := time.Now()
-	routing, err := s.routeTranscript(input.Transcript, true)
+	routing, err := s.routeTranscript(input.Transcript)
 	if err != nil {
 		return nil, fmt.Errorf("routing after spam override failed: %w", err)
 	}

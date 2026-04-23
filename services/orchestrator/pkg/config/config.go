@@ -33,9 +33,9 @@ type Config struct {
 	RoutingFeedbackPath              string
 	RoutingAutoLearn                 bool
 	RoutingAutoLearnLimit            int
-	SpamGateFeedbackPath             string
-	SpamGatePositiveLabel            string
-	SpamGateNegativeLabel            string
+	SpamFeedbackPath                 string
+	SpamPositiveLabel                string
+	SpamNegativeLabel                string
 	RouterAdminURL                   string
 	RouterAdminToken                 string
 	RouterAdminTimeoutSeconds        int
@@ -72,9 +72,9 @@ func Load() *Config {
 		RoutingFeedbackPath:              getEnv("ROUTING_FEEDBACK_PATH", "./data/routing_feedback.jsonl"),
 		RoutingAutoLearn:                 getEnv("ROUTING_AUTO_LEARN", "1") == "1",
 		RoutingAutoLearnLimit:            getEnvInt("ROUTING_AUTO_LEARN_LIMIT", 50),
-		SpamGateFeedbackPath:             getEnv("SPAM_GATE_FEEDBACK_PATH", "./data/spam_gate_feedback.jsonl"),
-		SpamGatePositiveLabel:            getEnv("SPAM_GATE_POSITIVE_LABEL", "spam"),
-		SpamGateNegativeLabel:            getEnv("SPAM_GATE_NEGATIVE_LABEL", "not_spam"),
+		SpamFeedbackPath:                 getEnv("SPAM_FEEDBACK_PATH", "./data/spam_feedback.jsonl"),
+		SpamPositiveLabel:                getEnv("SPAM_POSITIVE_LABEL", "spam"),
+		SpamNegativeLabel:                getEnv("SPAM_NEGATIVE_LABEL", "not_spam"),
 		RouterAdminURL:                   getEnv("ROUTER_ADMIN_URL", "http://localhost:8082"),
 		RouterAdminToken:                 getEnv("ROUTER_ADMIN_TOKEN", ""),
 		RouterAdminTimeoutSeconds:        getEnvInt("ROUTER_ADMIN_TIMEOUT_SECONDS", 600),
@@ -116,8 +116,8 @@ func logConfig(cfg *Config) {
 		{"Routing feedback path", cfg.RoutingFeedbackPath},
 		{"Routing auto learn", cfg.RoutingAutoLearn},
 		{"Routing auto learn limit", cfg.RoutingAutoLearnLimit},
-		{"Spam gate feedback path", cfg.SpamGateFeedbackPath},
-		{"Spam gate labels", cfg.SpamGatePositiveLabel + " / " + cfg.SpamGateNegativeLabel},
+		{"Spam feedback path", cfg.SpamFeedbackPath},
+		{"Spam labels", cfg.SpamPositiveLabel + " / " + cfg.SpamNegativeLabel},
 		{"Router admin URL", cfg.RouterAdminURL},
 		{"Router admin timeout (sec)", cfg.RouterAdminTimeoutSeconds},
 		{"Database URL", cfg.DatabaseURL},

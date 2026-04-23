@@ -15,7 +15,7 @@ var validSpamReviewDecisions = map[string]struct{}{
 	"not_spam": {},
 }
 
-type SpamGateFeedbackMeta struct {
+type SpamFeedbackMeta struct {
 	Status         string  `json:"status,omitempty"`
 	PredictedLabel string  `json:"predicted_label,omitempty"`
 	Confidence     float64 `json:"confidence,omitempty"`
@@ -25,17 +25,17 @@ type SpamGateFeedbackMeta struct {
 	Backend        string  `json:"backend,omitempty"`
 }
 
-type SpamGateFeedbackRequest struct {
+type SpamFeedbackRequest struct {
 	CallID             string                      `json:"call_id"`
 	SourceFilename     string                      `json:"source_filename,omitempty"`
 	Decision           string                      `json:"decision"`
 	TranscriptText     string                      `json:"transcript_text,omitempty"`
 	TranscriptSegments []FeedbackTranscriptSegment `json:"transcript_segments,omitempty"`
 	TrainingSample     string                      `json:"training_sample,omitempty"`
-	SpamCheck          SpamGateFeedbackMeta        `json:"spam_check"`
+	SpamCheck          SpamFeedbackMeta            `json:"spam_check"`
 }
 
-type SpamGateFeedbackRecord struct {
+type SpamFeedbackRecord struct {
 	ID                 string                      `json:"id"`
 	CreatedAt          string                      `json:"created_at"`
 	CallID             string                      `json:"call_id"`
@@ -45,7 +45,7 @@ type SpamGateFeedbackRecord struct {
 	TranscriptText     string                      `json:"transcript_text,omitempty"`
 	TranscriptSegments []FeedbackTranscriptSegment `json:"transcript_segments,omitempty"`
 	TrainingSample     string                      `json:"training_sample,omitempty"`
-	SpamCheck          SpamGateFeedbackMeta        `json:"spam_check"`
+	SpamCheck          SpamFeedbackMeta            `json:"spam_check"`
 }
 
 type SpamFeedbackService struct {
@@ -71,7 +71,7 @@ func NewSpamFeedbackService(feedbackPath, positiveLabel, negativeLabel string) *
 	}
 }
 
-func (s *SpamFeedbackService) SaveDecision(input SpamGateFeedbackRequest) (*SpamGateFeedbackRecord, error) {
+func (s *SpamFeedbackService) SaveDecision(input SpamFeedbackRequest) (*SpamFeedbackRecord, error) {
 	decision := strings.ToLower(strings.TrimSpace(input.Decision))
 	if _, ok := validSpamReviewDecisions[decision]; !ok {
 		return nil, fmt.Errorf("decision must be spam or not_spam")
@@ -97,7 +97,7 @@ func (s *SpamFeedbackService) SaveDecision(input SpamGateFeedbackRequest) (*Spam
 		label = s.positiveLabel
 	}
 
-	record := &SpamGateFeedbackRecord{
+	record := &SpamFeedbackRecord{
 		ID:                 fmt.Sprintf("spam-feedback-%d", time.Now().UnixNano()),
 		CreatedAt:          time.Now().UTC().Format(time.RFC3339Nano),
 		CallID:             callID,
@@ -107,7 +107,7 @@ func (s *SpamFeedbackService) SaveDecision(input SpamGateFeedbackRequest) (*Spam
 		TranscriptText:     transcriptText,
 		TranscriptSegments: segments,
 		TrainingSample:     trainingSample,
-		SpamCheck: SpamGateFeedbackMeta{
+		SpamCheck: SpamFeedbackMeta{
 			Status:         strings.TrimSpace(input.SpamCheck.Status),
 			PredictedLabel: strings.TrimSpace(input.SpamCheck.PredictedLabel),
 			Confidence:     input.SpamCheck.Confidence,

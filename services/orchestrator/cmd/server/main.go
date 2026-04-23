@@ -113,9 +113,9 @@ func main() {
 		routingConfigService,
 	)
 	spamFeedbackService := services.NewSpamFeedbackService(
-		cfg.SpamGateFeedbackPath,
-		cfg.SpamGatePositiveLabel,
-		cfg.SpamGateNegativeLabel,
+		cfg.SpamFeedbackPath,
+		cfg.SpamPositiveLabel,
+		cfg.SpamNegativeLabel,
 	)
 	routingModelService := services.NewRoutingModelService(
 		cfg.RouterAdminURL,

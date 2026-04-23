@@ -52,7 +52,7 @@ type SpamCheckResponse struct {
 	Backend        string  `json:"backend,omitempty"`
 }
 
-func (c *RoutingClient) Route(callID string, segments []Segment, skipSpamGate bool) (*RoutingResponse, error) {
+func (c *RoutingClient) Route(callID string, segments []Segment) (*RoutingResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -68,9 +68,8 @@ func (c *RoutingClient) Route(callID string, segments []Segment, skipSpamGate bo
 	}
 
 	resp, err := c.client.Route(ctx, &callprocessingv1.RouteRequest{
-		CallId:       callID,
-		Segments:     pbSegments,
-		SkipSpamGate: skipSpamGate,
+		CallId:   callID,
+		Segments: pbSegments,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("routing rpc: %w", err)

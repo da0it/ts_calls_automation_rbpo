@@ -329,6 +329,41 @@ func TestProcessCallIntegrationStopsOnLowConfidenceRouting(t *testing.T) {
 	}
 }
 
+func TestProcessCallIntegrationBlocksSingleStageSpamIntent(t *testing.T) {
+	env := buildServiceForTest(
+		t,
+		&callprocessingv1.Transcript{
+			CallId: "call-spam",
+			Segments: []*callprocessingv1.Segment{
+				{Start: 0, End: 1, Speaker: "spk_0", Text: "Предлагаем услуги продвижения сайта."},
+			},
+		},
+		&callprocessingv1.Routing{
+			IntentId:         "spam.call",
+			IntentConfidence: 0.96,
+			Priority:         "high",
+			SuggestedGroup:   "support",
+		},
+		`{"entities":{}}`,
+		0.5,
+	)
+
+	result, err := env.service.ProcessCall(writeAudioFile(t))
+	if err != nil {
+		t.Fatalf("process call: %v", err)
+	}
+
+	if result.Status != services.ProcessStatusSpamBlocked {
+		t.Fatalf("expected status %q, got %q", services.ProcessStatusSpamBlocked, result.Status)
+	}
+	if env.ticketCalls.count() != 0 {
+		t.Fatalf("ticket service must not be called for spam, got %d calls", env.ticketCalls.count())
+	}
+	if *env.entityCalls != 0 {
+		t.Fatalf("entity service must not be called for spam, got %d calls", *env.entityCalls)
+	}
+}
+
 func TestProcessCallIntegrationReturnsNoSpeechWithoutRouting(t *testing.T) {
 	env := buildServiceForTest(
 		t,

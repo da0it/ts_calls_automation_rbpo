@@ -63,10 +63,12 @@ def _build_grpc_server_credentials(prefix: str):
     return grpc.ssl_server_credentials(((key_data, cert_data),))
 
 
-def _spam_check_from_analysis(raw: Dict[str, Any]) -> pb2.SpamCheck:
+def _spam_check_from_analysis(raw: Dict[str, Any]) -> Optional[pb2.SpamCheck]:
     payload = raw.get("spam_decision") if isinstance(raw, dict) else {}
     if not isinstance(payload, dict):
-        payload = {}
+        return None
+    if not payload:
+        return None
     return pb2.SpamCheck(
         status=str(payload.get("status") or ""),
         predicted_label=str(payload.get("predicted_label") or ""),
@@ -140,7 +142,6 @@ class RoutingService(pb2_grpc.RoutingServiceServicer):
             analysis = self.analyzer.analyze(
                 call,
                 self._get_intents(),
-                skip_spam_gate=bool(request.skip_spam_gate),
             )
 
             suggested_group = ""
@@ -153,14 +154,18 @@ class RoutingService(pb2_grpc.RoutingServiceServicer):
             if priority == "normal":
                 priority = "medium"
 
+            routing_payload = {
+                "intent_id": analysis.intent.intent_id,
+                "intent_confidence": float(analysis.intent.confidence),
+                "priority": priority,
+                "suggested_group": suggested_group,
+            }
+            spam_check = _spam_check_from_analysis(analysis.raw)
+            if spam_check is not None:
+                routing_payload["spam_check"] = spam_check
+
             response = pb2.RouteResponse(
-                routing=pb2.Routing(
-                    intent_id=analysis.intent.intent_id,
-                    intent_confidence=float(analysis.intent.confidence),
-                    priority=priority,
-                    suggested_group=suggested_group,
-                    spam_check=_spam_check_from_analysis(analysis.raw),
-                )
+                routing=pb2.Routing(**routing_payload)
             )
             return response
         except Exception as exc:
@@ -178,16 +183,6 @@ class RoutingService(pb2_grpc.RoutingServiceServicer):
             "intents_count": len(intents),
             "tuned_model": tuned_status,
         }
-
-
-def _optional_float_env(name: str) -> Optional[float]:
-    raw = os.getenv(name)
-    if raw is None:
-        return None
-    raw = raw.strip()
-    if not raw:
-        return None
-    return float(raw)
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
@@ -265,21 +260,6 @@ def serve() -> None:
     nlp_backend = os.getenv("ROUTER_NLP_BACKEND", "stanza").strip().lower() or "stanza"
     nlp_text_mode = os.getenv("ROUTER_NLP_TEXT_MODE", "canonical").strip().lower() or "canonical"
     nlp_stanza_resources_dir = os.getenv("ROUTER_NLP_STANZA_DIR", "").strip()
-    spam_gate_enabled = os.getenv("ROUTER_SPAM_GATE_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
-    spam_gate_model_path = os.getenv(
-        "ROUTER_SPAM_GATE_MODEL_PATH",
-        str(Path(__file__).parent / "configs" / "router_spam_model"),
-    )
-    spam_gate_artifact_path = os.getenv(
-        "ROUTER_SPAM_GATE_ARTIFACT_PATH",
-        str(Path(__file__).parent / "configs" / "router_spam_gate.pt"),
-    )
-    spam_gate_threshold = float(os.getenv("ROUTER_SPAM_GATE_THRESHOLD", "0.8"))
-    spam_gate_allow_threshold = float(os.getenv("ROUTER_SPAM_GATE_ALLOW_THRESHOLD", "0.35"))
-    spam_gate_score_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_THRESHOLD")
-    spam_gate_score_allow_threshold = _optional_float_env("ROUTER_SPAM_GATE_SCORE_ALLOW_THRESHOLD")
-    spam_gate_positive_label = os.getenv("ROUTER_SPAM_GATE_POSITIVE_LABEL", "spam").strip() or "spam"
-    spam_conflict_review_min_confidence = float(os.getenv("ROUTER_SPAM_CONFLICT_REVIEW_MIN_CONFIDENCE", "0.98"))
     intents = load_intents(intents_path)
     logger.info("loaded intents config from %s (%d intents)", intents_path, len(intents))
     analyzer = RubertEmbeddingAnalyzer(
@@ -296,15 +276,6 @@ def serve() -> None:
         nlp_backend=nlp_backend,
         nlp_text_mode=nlp_text_mode,
         nlp_stanza_resources_dir=nlp_stanza_resources_dir,
-        spam_gate_enabled=spam_gate_enabled,
-        spam_gate_model_path=spam_gate_model_path,
-        spam_gate_artifact_path=spam_gate_artifact_path,
-        spam_gate_threshold=spam_gate_threshold,
-        spam_gate_allow_threshold=spam_gate_allow_threshold,
-        spam_gate_score_threshold=spam_gate_score_threshold,
-        spam_gate_score_allow_threshold=spam_gate_score_allow_threshold,
-        spam_gate_positive_label=spam_gate_positive_label,
-        spam_conflict_review_min_confidence=spam_conflict_review_min_confidence,
     )
 
     routing_service = RoutingService(

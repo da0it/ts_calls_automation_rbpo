@@ -9,12 +9,10 @@ import torch
 from .finetuned_router import FinetunedRouterRuntime
 from .models import AIAnalysis, CallInput, IntentResult, Priority
 from .nlp_preprocess import PreprocessConfig, build_canonical
-from .spam_gate import SpamGateRuntime
 
 
 logger = logging.getLogger(__name__)
 RESERVED_FALLBACK_INTENT_ID = "misc.triage"
-RESERVED_SPAM_INTENT_ID = "spam.call"
 
 
 class AIAnalyzer:
@@ -23,15 +21,13 @@ class AIAnalyzer:
         call: CallInput,
         allowed_intents: Dict[str, Dict],
         groups: Optional[Dict[str, Dict]] = None,
-        *,
-        skip_spam_gate: bool = False,
     ) -> AIAnalysis:
         raise NotImplementedError
 
 
 class RubertEmbeddingAnalyzer(AIAnalyzer):
     """
-    Router analyzer in a simplified "fine-tuned model only" mode.
+    Router analyzer in a single-stage "fine-tuned model only" mode.
     If no fine-tuned model is available, routes to misc.triage.
     Low-confidence predictions are returned as-is and can be sent to manual review upstream.
     """
@@ -56,15 +52,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         nlp_backend: str = "stanza",
         nlp_text_mode: str = "canonical",
         nlp_stanza_resources_dir: str = "",
-        spam_gate_enabled: bool = False,
-        spam_gate_model_path: Optional[str] = None,
-        spam_gate_artifact_path: Optional[str] = None,
-        spam_gate_threshold: float = 0.8,
-        spam_gate_allow_threshold: float = 0.35,
-        spam_gate_score_threshold: Optional[float] = None,
-        spam_gate_score_allow_threshold: Optional[float] = None,
-        spam_gate_positive_label: str = RESERVED_SPAM_INTENT_ID,
-        spam_conflict_review_min_confidence: float = 0.98,
         **_: Any,
     ):
         self.model_name = str(model_name).strip() or "ai-forever/ruBert-base"
@@ -91,24 +78,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         self.finetuned_batch_size = int(max(4, min(64, finetuned_batch_size)))
         self.finetuned_max_length = int(max(64, min(512, finetuned_max_length)))
         self.finetuned_weight_decay = float(max(0.0, min(0.2, finetuned_weight_decay)))
-        self.spam_gate_enabled = bool(spam_gate_enabled)
-        self.spam_gate_model_path = str(spam_gate_model_path or "").strip()
-        self.spam_gate_artifact_path = str(spam_gate_artifact_path or "").strip()
-        self.spam_gate_threshold = float(max(0.0, min(1.0, spam_gate_threshold)))
-        self.spam_gate_allow_threshold = float(max(0.0, min(self.spam_gate_threshold, spam_gate_allow_threshold)))
-        self.spam_gate_positive_label = str(spam_gate_positive_label or RESERVED_SPAM_INTENT_ID).strip() or RESERVED_SPAM_INTENT_ID
-        self.spam_conflict_review_min_confidence = float(max(0.0, min(1.0, spam_conflict_review_min_confidence)))
-
-        self._spam_gate = SpamGateRuntime(
-            enabled=self.spam_gate_enabled,
-            model_path=self.spam_gate_model_path,
-            artifact_path=self.spam_gate_artifact_path,
-            threshold=self.spam_gate_threshold,
-            allow_threshold=self.spam_gate_allow_threshold,
-            score_threshold=spam_gate_score_threshold,
-            score_allow_threshold=spam_gate_score_allow_threshold,
-            positive_label=self.spam_gate_positive_label,
-        )
         self._finetuned_router = FinetunedRouterRuntime(
             model_name=self.model_name,
             device=self.device,
@@ -125,46 +94,11 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         call: CallInput,
         allowed_intents: Dict[str, Dict],
         groups: Optional[Dict[str, Dict]] = None,
-        *,
-        skip_spam_gate: bool = False,
     ) -> AIAnalysis:
         started = time.time()
         prep = build_canonical([(s.start, s.text, s.role) for s in call.segments], self.preprocess_cfg)
         text = self._extract_text_with_context(prep.model_text, self.max_text_chars)
-        runtime_intent_ids = self._stage2_runtime_intent_ids(allowed_intents)
-
-        spam_meta = self._spam_gate.predict(text, skip=skip_spam_gate)
-        spam_decision = self._spam_gate.build_decision(spam_meta)
-        if spam_decision["status"] in {"block", "review"}:
-            conflict_review = self._try_spam_conflict_review(
-                text=text,
-                allowed_intents=allowed_intents,
-                runtime_intent_ids=runtime_intent_ids,
-                spam_meta=spam_meta,
-                spam_decision=spam_decision,
-                processing_time_ms=(time.time() - started) * 1000.0,
-                text_len=len(text),
-                prep_meta=prep.meta,
-            )
-            if conflict_review is not None:
-                return conflict_review
-        if spam_decision["status"] == "block":
-            return self._spam_result(
-                spam_meta=spam_meta,
-                spam_decision=spam_decision,
-                allowed_intents=allowed_intents,
-                processing_time_ms=(time.time() - started) * 1000.0,
-                text_len=len(text),
-                prep_meta=prep.meta,
-            )
-        if spam_decision["status"] == "review":
-            return self._spam_review_result(
-                spam_meta=spam_meta,
-                spam_decision=spam_decision,
-                processing_time_ms=(time.time() - started) * 1000.0,
-                text_len=len(text),
-                prep_meta=prep.meta,
-            )
+        runtime_intent_ids = self._runtime_intent_ids(allowed_intents)
 
         probs, meta = self._finetuned_router.predict(text, runtime_intent_ids)
         if probs is None:
@@ -173,7 +107,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 processing_time_ms=(time.time() - started) * 1000.0,
                 text_len=len(text),
                 prep_meta=prep.meta,
-                model_meta={"spam_gate": spam_meta, "spam_decision": spam_decision, "stage2": meta},
+                model_meta=meta,
             )
 
         intent_ids = list(meta.get("intent_ids") or runtime_intent_ids)
@@ -198,9 +132,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 text_len=len(text),
                 prep_meta=prep.meta,
                 model_meta={
-                    "spam_gate": spam_meta,
-                    "spam_decision": spam_decision,
-                    "stage2": meta,
+                    "finetuned_model": meta,
                     "top3_intents": top3_intents,
                     "review_required": True,
                     "review_reason": f"low_confidence:{confidence:.3f}",
@@ -224,8 +156,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 "text_length": len(text),
                 "prep_meta": prep.meta,
                 "top3_intents": top3_intents,
-                "spam_gate": spam_meta,
-                "spam_decision": spam_decision,
                 "finetuned_model": meta,
             },
         )
@@ -237,81 +167,9 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
         )
         return analysis
 
-    def _try_spam_conflict_review(
-        self,
-        *,
-        text: str,
-        allowed_intents: Dict[str, Dict[str, Any]],
-        runtime_intent_ids: list[str],
-        spam_meta: Dict[str, Any],
-        spam_decision: Dict[str, Any],
-        processing_time_ms: float,
-        text_len: int,
-        prep_meta: Dict[str, Any],
-    ) -> Optional[AIAnalysis]:
-        if not runtime_intent_ids:
-            return None
-
-        probs, meta = self._finetuned_router.predict(text, runtime_intent_ids)
-        if probs is None:
-            return None
-
-        intent_ids = list(meta.get("intent_ids") or runtime_intent_ids)
-        best_idx = int(torch.argmax(probs).item())
-        best_intent_id = intent_ids[best_idx]
-        confidence = float(probs[best_idx].item())
-        if confidence < self.spam_conflict_review_min_confidence:
-            return None
-
-        top_k = min(3, len(intent_ids))
-        top_indices = torch.topk(probs, k=top_k).indices.tolist()
-        top3_intents = [{"intent": intent_ids[int(i)], "score": float(probs[int(i)].item())} for i in top_indices]
-        meta_intent = allowed_intents.get(best_intent_id, {})
-        priority = self._normalize_priority(meta_intent.get("priority", "medium"))
-        default_group = str(meta_intent.get("default_group") or "").strip()
-        targets = [{"type": "group", "id": default_group, "confidence": confidence}] if default_group else []
-
-        conflict_spam_decision = dict(spam_decision)
-        conflict_spam_decision["status"] = "review"
-        conflict_spam_decision["reason"] = (
-            f"spam_nonspam_conflict:{best_intent_id}:{confidence:.3f}:from_{spam_decision.get('status', 'unknown')}"
-        )
-
-        logger.info(
-            "Spam/non-spam conflict routed to manual review intent=%s conf=%.3f source_status=%s",
-            best_intent_id,
-            confidence,
-            spam_decision.get("status"),
-        )
-
-        return AIAnalysis(
-            intent=IntentResult(
-                intent_id=best_intent_id,
-                confidence=confidence,
-                evidence=[],
-                notes=f"spam_nonspam_conflict_review_required:{confidence:.3f}",
-            ),
-            priority=priority,
-            suggested_targets=targets,
-            raw={
-                "mode": "finetuned_spam_conflict_review",
-                "model_version": self.model_name,
-                "device": self.device,
-                "processing_time_ms": round(processing_time_ms, 2),
-                "text_length": text_len,
-                "prep_meta": prep_meta,
-                "top3_intents": top3_intents,
-                "spam_gate": spam_meta,
-                "spam_decision": conflict_spam_decision,
-                "finetuned_model": meta,
-            },
-        )
-
     def get_training_status(self, allowed_intents: Optional[Dict[str, Dict]] = None) -> Dict[str, Any]:
-        current_intents = self._stage2_runtime_intent_ids(allowed_intents or {}) if allowed_intents else None
-        status = self._finetuned_router.status(current_intents=current_intents)
-        status["spam_gate"] = self._spam_gate.status()
-        return status
+        current_intents = self._runtime_intent_ids(allowed_intents or {}) if allowed_intents else None
+        return self._finetuned_router.status(current_intents=current_intents)
 
     def train_tuned_head(
         self,
@@ -327,7 +185,7 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
     ) -> Dict[str, Any]:
         return self._finetuned_router.train(
             allowed_intents=allowed_intents,
-            runtime_intent_ids=self._stage2_runtime_intent_ids(allowed_intents),
+            runtime_intent_ids=self._runtime_intent_ids(allowed_intents),
             feedback_path=feedback_path,
             output_path=output_path,
             epochs=int(epochs),
@@ -339,7 +197,6 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
 
     def reload_tuned_head_from_disk(self) -> Dict[str, Any]:
         self._finetuned_router.reload_from_disk()
-        self._spam_gate.reload_from_disk()
         return self.get_training_status()
 
     def _triage_result(
@@ -399,74 +256,10 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
                 "processing_time_ms": round(processing_time_ms, 2),
                 "text_length": text_len,
                 "prep_meta": prep_meta,
-                "finetuned_model": model_meta,
-            },
-        )
-
-    def _spam_result(
-        self,
-        *,
-        spam_meta: Dict[str, Any],
-        spam_decision: Dict[str, Any],
-        allowed_intents: Dict[str, Dict[str, Any]],
-        processing_time_ms: float,
-        text_len: int,
-        prep_meta: Dict[str, Any],
-    ) -> AIAnalysis:
-        spam_intent = allowed_intents.get(RESERVED_SPAM_INTENT_ID, {})
-        confidence = float(spam_meta.get("positive_confidence") or 0.0)
-        priority = self._normalize_priority(spam_intent.get("priority", "high"))
-        default_group = str(spam_intent.get("default_group") or "support").strip() or "support"
-        return AIAnalysis(
-            intent=IntentResult(
-                intent_id=RESERVED_SPAM_INTENT_ID,
-                confidence=confidence,
-                evidence=[],
-                notes=f"spam_gate confidence={confidence:.3f}",
-            ),
-            priority=priority,
-            suggested_targets=[{"type": "group", "id": default_group, "confidence": confidence}],
-            raw={
-                "mode": "spam_gate",
-                "model_version": self.model_name,
-                "device": self.device,
-                "processing_time_ms": round(processing_time_ms, 2),
-                "text_length": text_len,
-                "prep_meta": prep_meta,
-                "spam_gate": spam_meta,
-                "spam_decision": spam_decision,
-            },
-        )
-
-    def _spam_review_result(
-        self,
-        *,
-        spam_meta: Dict[str, Any],
-        spam_decision: Dict[str, Any],
-        processing_time_ms: float,
-        text_len: int,
-        prep_meta: Dict[str, Any],
-    ) -> AIAnalysis:
-        confidence = float(spam_meta.get("positive_confidence") or 0.0)
-        default_group = "support"
-        return AIAnalysis(
-            intent=IntentResult(
-                intent_id=RESERVED_SPAM_INTENT_ID,
-                confidence=confidence,
-                evidence=[],
-                notes=f"spam_gate review required confidence={confidence:.3f}",
-            ),
-            priority="high",
-            suggested_targets=[{"type": "group", "id": default_group, "confidence": confidence}],
-            raw={
-                "mode": "spam_gate_review",
-                "model_version": self.model_name,
-                "device": self.device,
-                "processing_time_ms": round(processing_time_ms, 2),
-                "text_length": text_len,
-                "prep_meta": prep_meta,
-                "spam_gate": spam_meta,
-                "spam_decision": spam_decision,
+                "top3_intents": model_meta.get("top3_intents", []),
+                "review_required": bool(model_meta.get("review_required")),
+                "review_reason": str(model_meta.get("review_reason") or ""),
+                "finetuned_model": model_meta.get("finetuned_model", model_meta),
             },
         )
 
@@ -485,10 +278,8 @@ class RubertEmbeddingAnalyzer(AIAnalyzer):
             raw = "medium"
         return raw  # type: ignore[return-value]
 
-    def _stage2_runtime_intent_ids(self, allowed_intents: Dict[str, Dict[str, Any]]) -> list[str]:
+    def _runtime_intent_ids(self, allowed_intents: Dict[str, Dict[str, Any]]) -> list[str]:
         excluded = {RESERVED_FALLBACK_INTENT_ID}
-        if self.spam_gate_enabled:
-            excluded.add(RESERVED_SPAM_INTENT_ID)
         return sorted(
             str(intent_id).strip()
             for intent_id in allowed_intents.keys()

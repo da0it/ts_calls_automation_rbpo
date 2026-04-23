@@ -611,11 +611,11 @@ func (h *ProcessHandler) OverrideSpamBlock(c *gin.Context) {
 	spamCheck := buildSpamCheck(payload.SpamCheck)
 
 	if h.spamFeedbackService != nil {
-		if _, err := h.spamFeedbackService.SaveDecision(services.SpamGateFeedbackRequest{
+		if _, err := h.spamFeedbackService.SaveDecision(services.SpamFeedbackRequest{
 			CallID:         transcript.CallID,
 			SourceFilename: payload.SourceFilename,
 			Decision:       "not_spam",
-			SpamCheck: services.SpamGateFeedbackMeta{
+			SpamCheck: services.SpamFeedbackMeta{
 				Status:         payload.SpamCheck.Status,
 				PredictedLabel: payload.SpamCheck.PredictedLabel,
 				Confidence:     payload.SpamCheck.Confidence,
