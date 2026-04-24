@@ -28,7 +28,10 @@ done
 
 curl -fsS "${LOCAL_TARGET_URL}/api/info" >"${REPORTS_DIR}/api-info.json"
 
-docker run --rm \
+chmod -R 777 "${REPORTS_DIR}"
+
+set +e
+docker run --rm --user 0:0 \
   -v "${REPORTS_DIR}:/zap/wrk:rw" \
   ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py \
@@ -39,7 +42,10 @@ docker run --rm \
   -I \
   -J /zap/wrk/zap-report.json \
   -r /zap/wrk/zap-report.html \
-  -x /zap/wrk/zap-report.xml
+  -x /zap/wrk/zap-report.xml \
+  2>&1 | tee "${REPORTS_DIR}/zap-console.log"
+echo "ZAP exit code: ${PIPESTATUS[0]}" | tee -a "${REPORTS_DIR}/zap-console.log"
+set -e
 
 ls -lah "${REPORTS_DIR}"
 

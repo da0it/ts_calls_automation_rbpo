@@ -48,7 +48,9 @@ jobs:
 
       - name: Run OWASP ZAP baseline scan
         run: |
-          docker run --rm --network host \
+          chmod -R 777 reports/dast
+          set +e
+          docker run --rm --network host --user 0:0 \
             -v "$PWD/reports/dast:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
@@ -59,11 +61,22 @@ jobs:
             -I \
             -J /zap/wrk/zap-report.json \
             -r /zap/wrk/zap-report.html \
-            -x /zap/wrk/zap-report.xml || true
+            -x /zap/wrk/zap-report.xml \
+            2>&1 | tee reports/dast/zap-console.log
+          echo "ZAP exit code: ${PIPESTATUS[0]}" | tee -a reports/dast/zap-console.log
+          exit 0
 
       - name: Verify ZAP reports
         run: |
           ls -lah reports/dast
+          if [ ! -f reports/dast/zap-report.json ]; then
+            echo "zap-report.json was not generated"
+            echo "=== dast-fixture.log ==="
+            sed -n '1,240p' reports/dast/dast-fixture.log || true
+            echo "=== zap-console.log ==="
+            sed -n '1,240p' reports/dast/zap-console.log || true
+            exit 1
+          fi
           test -f reports/dast/zap-report.json
           test -f reports/dast/zap-report.html
           test -f reports/dast/zap-report.xml
