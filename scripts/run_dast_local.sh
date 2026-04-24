@@ -10,7 +10,8 @@ ZAP_TARGET_URL="${ZAP_TARGET_URL:-http://host.docker.internal:${FIXTURE_PORT}}"
 mkdir -p "${REPORTS_DIR}"
 
 pushd "${ROOT_DIR}/services/orchestrator" >/dev/null
-go run ./cmd/dast_fixture >"${REPORTS_DIR}/dast-fixture.log" 2>&1 &
+go build -o "${REPORTS_DIR}/dast-fixture" ./cmd/dast_fixture
+"${REPORTS_DIR}/dast-fixture" >"${REPORTS_DIR}/dast-fixture.log" 2>&1 &
 FIXTURE_PID=$!
 popd >/dev/null
 
@@ -19,7 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in $(seq 1 30); do
+for _ in $(seq 1 90); do
   if curl -fsS "${LOCAL_TARGET_URL}/health" >/dev/null; then
     break
   fi

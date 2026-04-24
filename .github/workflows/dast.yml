@@ -25,15 +25,18 @@ jobs:
       - name: Create reports directory
         run: mkdir -p reports/dast
 
-      - name: Start lightweight DAST fixture
+      - name: Build lightweight DAST fixture
         working-directory: services/orchestrator
+        run: go build -o "$RUNNER_TEMP/dast-fixture" ./cmd/dast_fixture
+
+      - name: Start lightweight DAST fixture
         run: |
-          go run ./cmd/dast_fixture > "$GITHUB_WORKSPACE/reports/dast/dast-fixture.log" 2>&1 &
+          nohup "$RUNNER_TEMP/dast-fixture" > "$GITHUB_WORKSPACE/reports/dast/dast-fixture.log" 2>&1 &
           echo $! > "$GITHUB_WORKSPACE/reports/dast/dast-fixture.pid"
 
       - name: Wait for fixture
         run: |
-          for _ in $(seq 1 30); do
+          for _ in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8013/health > /dev/null; then
               exit 0
             fi
