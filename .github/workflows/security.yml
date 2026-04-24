@@ -1,8 +1,6 @@
-name: DevSecOps CI
+name: Security CI
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -36,7 +34,7 @@ jobs:
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
-      - name: Create reports directory
+      - name: Create SAST reports directory
         run: mkdir -p reports/sast
 
       - name: Run Bandit
@@ -91,14 +89,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create reports directory
+      - name: Create SCA reports directory
         run: mkdir -p reports/sca
 
       - name: Generate SBOM
-        run: trivy fs --config .trivy.yaml --scanners vuln --format cyclonedx --output reports/sca/sbom.cdx.json .
+        run: |
+          trivy fs \
+            --config .trivy.yaml \
+            --scanners vuln \
+            --format cyclonedx \
+            --output reports/sca/sbom.cdx.json .
 
       - name: Scan dependencies with Trivy
-        run: trivy fs --config .trivy.yaml --scanners vuln --format json --output reports/sca/trivy-report.json .
+        run: |
+          trivy fs \
+            --config .trivy.yaml \
+            --scanners vuln \
+            --format json \
+            --output reports/sca/trivy-report.json .
 
       - name: Copy VEX document
         run: cp vex.json reports/sca/vex.json
@@ -124,18 +132,21 @@ jobs:
         with:
           go-version-file: services/orchestrator/go.mod
 
-      - name: Create reports directory
+      - name: Create DAST reports directory
         run: mkdir -p reports/dast
 
-      - name: Start lightweight DAST fixture
+      - name: Build lightweight DAST fixture
         working-directory: services/orchestrator
+        run: go build -o "$RUNNER_TEMP/dast-fixture" ./cmd/dast_fixture
+
+      - name: Start lightweight DAST fixture
         run: |
-          go run ./cmd/dast_fixture > "$GITHUB_WORKSPACE/reports/dast/dast-fixture.log" 2>&1 &
+          nohup "$RUNNER_TEMP/dast-fixture" > "$GITHUB_WORKSPACE/reports/dast/dast-fixture.log" 2>&1 &
           echo $! > "$GITHUB_WORKSPACE/reports/dast/dast-fixture.pid"
 
       - name: Wait for fixture
         run: |
-          for _ in $(seq 1 30); do
+          for _ in $(seq 1 260); do
             if curl -fsS http://127.0.0.1:8013/health > /dev/null; then
               exit 0
             fi
@@ -150,7 +161,9 @@ jobs:
 
       - name: Run OWASP ZAP baseline scan
         run: |
-          docker run --rm --network host \
+          chmod -R 777 reports/dast
+          set +e
+          docker run --rm --network host --user 0:0 \
             -v "$PWD/reports/dast:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
@@ -161,7 +174,17 @@ jobs:
             -I \
             -J zap-report.json \
             -r zap-report.html \
-            -x zap-report.xml || true
+            -x zap-report.xml \
+            2>&1 | tee reports/dast/zap-console.log
+          echo "ZAP exit code: ${PIPESTATUS[0]}" | tee -a reports/dast/zap-console.log
+          exit 0
+
+      - name: Verify ZAP reports
+        run: |
+          ls -lah reports/dast
+          test -f reports/dast/zap-report.json
+          test -f reports/dast/zap-report.html
+          test -f reports/dast/zap-report.xml
 
       - name: Upload DAST artifacts
         if: always()
@@ -201,17 +224,37 @@ jobs:
           name: sast-reports
           path: reports/sast
 
-      - name: Download SCA artifacts
+      - name: Download SCA reports
         uses: actions/download-artifact@v4
         with:
           name: sca-reports
           path: reports/sca
 
-      - name: Download DAST artifacts
+      - name: Download DAST reports
         uses: actions/download-artifact@v4
         with:
           name: dast-reports
           path: reports/dast
 
-      - name: Run Security Gate
-        run: sh scripts/run_security_gate_all.sh
+      - name: Run SAST Security Gate
+        run: |
+          python security_gate.py \
+            --threshold high \
+            --bandit reports/sast/bandit-report.json \
+            --gosec reports/sast/gosec-orchestrator.json \
+            --gosec reports/sast/gosec-ticket_creation.json \
+            --gosec reports/sast/gosec-notification_sender.json
+
+      - name: Run SCA Security Gate
+        run: |
+          python security_gate.py \
+            --threshold critical \
+            --policy security_policy.yaml \
+            --trivy reports/sca/trivy-report.json
+
+      - name: Run DAST Security Gate
+        run: |
+          python security_gate.py \
+            --threshold high \
+            --policy dast_policy.yaml \
+            --zap reports/dast/zap-report.json
