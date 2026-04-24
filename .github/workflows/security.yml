@@ -27,6 +27,13 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.25.0"
+      
+      - name: Run gosec for dast_fixture
+        working-directory: services/orchestrator
+        run: |
+          gosec -fmt=json \
+            -out=../../reports/sast/gosec-dast-fixture.json \
+            ./cmd/dast_fixture/... || true
 
       - name: Install Bandit and gosec
         run: |
@@ -239,7 +246,7 @@ jobs:
       - name: Run SAST Security Gate
         run: |
           python security_gate.py \
-            --threshold high \
+            --threshold medium \
             --bandit reports/sast/bandit-report.json \
             --gosec reports/sast/gosec-orchestrator.json \
             --gosec reports/sast/gosec-ticket_creation.json \
