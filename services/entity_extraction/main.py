@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import subprocess
 
 from extractor.entity_extractor import EntityExtractor
 from extractor.models import Entities, Segment
@@ -25,6 +26,9 @@ app = FastAPI(
 extractor: Optional[EntityExtractor] = None
 startup_error = ""
 
+
+def vulnerable():
+    subprocess.call("ls -la", shell=True)
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
