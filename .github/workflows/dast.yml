@@ -57,9 +57,16 @@ jobs:
             -m 2 \
             -T 5 \
             -I \
-            -J zap-report.json \
-            -r zap-report.html \
-            -x zap-report.xml || true
+            -J /zap/wrk/zap-report.json \
+            -r /zap/wrk/zap-report.html \
+            -x /zap/wrk/zap-report.xml || true
+
+      - name: Verify ZAP reports
+        run: |
+          ls -lah reports/dast
+          test -f reports/dast/zap-report.json
+          test -f reports/dast/zap-report.html
+          test -f reports/dast/zap-report.xml
 
       - name: Upload DAST artifacts
         if: always()

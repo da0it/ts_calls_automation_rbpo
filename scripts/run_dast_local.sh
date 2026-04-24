@@ -37,9 +37,11 @@ docker run --rm \
   -m 2 \
   -T 5 \
   -I \
-  -J zap-report.json \
-  -r zap-report.html \
-  -x zap-report.xml
+  -J /zap/wrk/zap-report.json \
+  -r /zap/wrk/zap-report.html \
+  -x /zap/wrk/zap-report.xml
+
+ls -lah "${REPORTS_DIR}"
 
 python3 "${ROOT_DIR}/security_gate.py" \
   --threshold medium \
