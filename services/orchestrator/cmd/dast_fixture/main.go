@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"crypto/md5"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"orchestrator/internal/handlers"
@@ -47,6 +49,15 @@ func main() {
 	})
 	router.GET("/health", processHandler.Health)
 	router.GET("/api/info", processHandler.Root)
+
+	
+	router.GET("/api/v1/debug/hash", func(c *gin.Context) {
+		value := c.Query("value")
+		hash := md5.Sum([]byte(value))
+		c.JSON(http.StatusOK, gin.H{
+			"hash": fmt.Sprintf("%x", hash),
+		})
+	})
 
 	router.POST("/api/v1/auth/login", func(c *gin.Context) {
 		var req authRequest
