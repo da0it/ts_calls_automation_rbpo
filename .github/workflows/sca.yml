@@ -28,6 +28,9 @@ jobs:
       - name: Scan dependencies with Trivy
         run: trivy fs --config .trivy.yaml --scanners vuln --format json --output reports/sca/trivy-report.json .
 
+      - name: Copy VEX document
+        run: cp vex.json reports/sca/vex.json
+
       - name: Upload SCA artifacts
         if: always()
         uses: actions/upload-artifact@v4
