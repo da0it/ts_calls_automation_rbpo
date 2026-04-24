@@ -44,6 +44,14 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 - локальная обработка данных без облачных LLM по умолчанию
 - ограничение CORS и хранение чувствительных настроек в env
 
+## DevSecOps CI/CD
+
+- Единый workflow для ЛР14: `.github/workflows/ci.yml`
+- Точечные workflow для ЛР11–13 сохранены и запускаются вручную через `workflow_dispatch`
+- GitLab-вариант конвейера: `.gitlab-ci.yml`
+- Артефакты безопасности сохраняются в `reports/sast`, `reports/sca` и `reports/dast`
+- Локальная проверка Security Gate по готовым отчётам: `sh scripts/run_security_gate_all.sh`
+
 ## Документация по развертыванию
 
 - Linux: `deploy/linux/DEPLOY.md`
