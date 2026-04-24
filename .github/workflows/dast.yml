@@ -59,9 +59,9 @@ jobs:
             -m 2 \
             -T 5 \
             -I \
-            -J /zap/wrk/zap-report.json \
-            -r /zap/wrk/zap-report.html \
-            -x /zap/wrk/zap-report.xml \
+            -J zap-report.json \
+            -r zap-report.html \
+            -x zap-report.xml \
             2>&1 | tee reports/dast/zap-console.log
           echo "ZAP exit code: ${PIPESTATUS[0]}" | tee -a reports/dast/zap-console.log
           exit 0

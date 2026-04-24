@@ -40,9 +40,9 @@ docker run --rm --user 0:0 \
   -m 2 \
   -T 5 \
   -I \
-  -J /zap/wrk/zap-report.json \
-  -r /zap/wrk/zap-report.html \
-  -x /zap/wrk/zap-report.xml \
+  -J zap-report.json \
+  -r zap-report.html \
+  -x zap-report.xml \
   2>&1 | tee "${REPORTS_DIR}/zap-console.log"
 echo "ZAP exit code: ${PIPESTATUS[0]}" | tee -a "${REPORTS_DIR}/zap-console.log"
 set -e
