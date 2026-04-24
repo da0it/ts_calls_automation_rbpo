@@ -26,9 +26,8 @@ app = FastAPI(
 extractor: Optional[EntityExtractor] = None
 startup_error = ""
 
-
-def vulnerable():
-    subprocess.call("ls -la", shell=True)
+# # Намеренная уязвимость для демонстрации блокировки пайплайна
+subprocess.call("ls", shell=True)
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
