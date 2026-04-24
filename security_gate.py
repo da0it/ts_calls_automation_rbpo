@@ -8,6 +8,7 @@ from typing import Any
 
 
 SEVERITY_ORDER = {
+    "INFO": 0,
     "LOW": 1,
     "MEDIUM": 2,
     "HIGH": 3,
@@ -102,19 +103,63 @@ def trivy_issues(path: Path) -> list[dict[str, Any]]:
     return issues
 
 
+def zap_severity(item: dict[str, Any]) -> str:
+    risk_code = str(item.get("riskcode", "")).strip()
+    if risk_code in {"0", "1", "2", "3"}:
+        return {
+            "0": "INFO",
+            "1": "LOW",
+            "2": "MEDIUM",
+            "3": "HIGH",
+        }[risk_code]
+
+    risk_desc = str(item.get("riskdesc", "")).upper()
+    for severity in ("HIGH", "MEDIUM", "LOW", "INFO"):
+        if severity in risk_desc:
+            return severity
+    return "INFO"
+
+
+def zap_issues(path: Path) -> list[dict[str, Any]]:
+    data = read_json(path)
+    issues = []
+    for site in data.get("site", []) or []:
+        site_name = site.get("@name") or site.get("name") or "<unknown>"
+        for item in site.get("alerts", []) or []:
+            instances = item.get("instances", []) or []
+            first_instance = instances[0] if instances else {}
+            issues.append(
+                {
+                    "tool": "zap",
+                    "severity": zap_severity(item),
+                    "rule": str(item.get("pluginid") or item.get("alertRef") or item.get("alert") or "?"),
+                    "file": first_instance.get("uri") or site_name,
+                    "line": "?",
+                    "details": item.get("alert") or item.get("name") or item.get("desc") or "",
+                    "confidence": item.get("confidence") or "",
+                    "instances": len(instances),
+                    "solution": item.get("solution") or "",
+                }
+            )
+    return issues
+
+
 def is_blocking(issue: dict[str, Any], threshold: str) -> bool:
     return SEVERITY_ORDER.get(issue["severity"], 0) >= SEVERITY_ORDER[threshold]
 
 
 def print_summary(name: str, issues: list[dict[str, Any]]) -> None:
     severities = Counter(issue["severity"] for issue in issues)
-    print(
+    summary = (
         f"{name}: total={len(issues)} "
         f"LOW={severities.get('LOW', 0)} "
         f"MEDIUM={severities.get('MEDIUM', 0)} "
         f"HIGH={severities.get('HIGH', 0)} "
         f"CRITICAL={severities.get('CRITICAL', 0)}"
     )
+    if severities.get("INFO", 0):
+        summary += f" INFO={severities.get('INFO', 0)}"
+    print(summary)
 
 
 def issue_matches_exception(issue: dict[str, Any], exception: dict[str, Any]) -> bool:
@@ -178,6 +223,8 @@ def format_issue(issue: dict[str, Any]) -> str:
     version = issue.get("version")
     fixed_version = issue.get("fixed_version")
     cvss = issue.get("cvss")
+    confidence = issue.get("confidence")
+    instances = issue.get("instances")
     extras = []
     if package and version:
         extras.append(f"{package}@{version}")
@@ -185,6 +232,10 @@ def format_issue(issue: dict[str, Any]) -> str:
         extras.append(f"fixed={fixed_version}")
     if isinstance(cvss, (int, float)):
         extras.append(f"cvss={cvss}")
+    if confidence:
+        extras.append(f"confidence={confidence}")
+    if isinstance(instances, int) and instances > 0:
+        extras.append(f"instances={instances}")
     suffix = f" [{' '.join(extras)}]" if extras else ""
     return (
         f"{issue['tool']} {issue['severity']} {issue['rule']} "
@@ -193,10 +244,11 @@ def format_issue(issue: dict[str, Any]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Security Gate for Bandit, gosec and Trivy reports")
+    parser = argparse.ArgumentParser(description="Security Gate for Bandit, gosec, Trivy and ZAP reports")
     parser.add_argument("--bandit", action="append", default=[], type=Path, help="Path to Bandit JSON report")
     parser.add_argument("--gosec", action="append", default=[], type=Path, help="Path to gosec JSON report")
     parser.add_argument("--trivy", action="append", default=[], type=Path, help="Path to Trivy JSON report")
+    parser.add_argument("--zap", action="append", default=[], type=Path, help="Path to OWASP ZAP JSON report")
     parser.add_argument("--policy", type=Path, default=None, help="Path to JSON-compatible YAML security policy")
     parser.add_argument(
         "--threshold",
@@ -222,6 +274,11 @@ def main() -> int:
 
     for path in args.trivy:
         issues = trivy_issues(path)
+        print_summary(path.name, issues)
+        all_issues.extend(issues)
+
+    for path in args.zap:
+        issues = zap_issues(path)
         print_summary(path.name, issues)
         all_issues.extend(issues)
 

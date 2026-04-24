@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "project": "ts_submodule_rbpo",
+    "purpose": "DAST gate policy for LR13"
+  },
+  "policy": {
+    "auto_block_severities": ["HIGH"],
+    "warn_severities": ["MEDIUM", "LOW"],
+    "ignored_findings": []
+  }
+}
